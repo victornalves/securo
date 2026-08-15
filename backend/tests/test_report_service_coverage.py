@@ -27,6 +27,7 @@ from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.services.report_service import (
+    _add_months,
     _get_baseline_projection,
     _net_worth_at,
     get_cash_flow_report,
@@ -714,6 +715,207 @@ async def test_cash_flow_baseline_amount_primary_used(session, test_user, test_w
     )
     assert report.meta.baseline_active is True
     assert report.meta.baseline_lookback_days > 0
+
+
+async def test_net_worth_api_accepts_anchor_month(client, auth_headers, test_user, session, test_workspace):
+    """`anchor_month` scopes net-worth to that calendar month, not today."""
+    acct = await _make_account(session, test_user.id, "NW Anchor")
+    anchor_dt = _add_months(date.today(), -2)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+    anchor_date = date(anchor_dt.year, anchor_dt.month, 5)
+    later_date = _add_months(anchor_date, 1)  # next month, still in the past
+
+    await _add_txn(session, test_user.id, acct.id, 1000, "credit", anchor_date, source="opening_balance")
+    await _add_txn(session, test_user.id, acct.id, 200, "debit", later_date)
+
+    resp = await client.get(
+        "/api/reports/net-worth",
+        params={"anchor_month": anchor_month},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    # Scoped to the anchor month: the later debit hasn't happened yet.
+    assert data["summary"]["primary_value"] == pytest.approx(1000.0)
+    assert all(dp["date"].startswith(anchor_month) for dp in data["trend"])
+
+    # Without anchor_month, today's balance reflects the later debit too.
+    resp_default = await client.get(
+        "/api/reports/net-worth", params={"months": 12}, headers=auth_headers,
+    )
+    assert resp_default.status_code == 200
+    assert resp_default.json()["summary"]["primary_value"] == pytest.approx(800.0)
+
+
+async def test_income_expenses_api_accepts_anchor_month(client, auth_headers, test_user, session, test_workspace):
+    """`anchor_month` scopes income-expenses to that calendar month, not today."""
+    acct = await _make_account(session, test_user.id, "IE Anchor")
+    anchor_dt = _add_months(date.today(), -2)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+    anchor_date = date(anchor_dt.year, anchor_dt.month, 5)
+
+    await _add_txn(session, test_user.id, acct.id, 3000, "credit", anchor_date)
+    await _add_txn(session, test_user.id, acct.id, 500, "credit", date.today())
+
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"anchor_month": anchor_month, "interval": "daily"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    bd = {b["key"]: b["value"] for b in data["summary"]["breakdowns"]}
+    # Today's credit is outside the anchor month and must not be counted.
+    assert bd["income"] == pytest.approx(3000.0)
+    assert all(dp["date"].startswith(anchor_month) for dp in data["trend"])
+
+
+async def test_net_worth_anchor_month_no_data_returns_empty_shape(session, test_user, test_workspace):
+    """A month with no transactions returns the normal empty shape, not an error."""
+    anchor_dt = _add_months(date.today(), -6)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, anchor_month=anchor_month,
+    )
+    assert report.summary.primary_value == 0.0
+    assert len(report.trend) > 0
+
+
+async def test_income_expenses_anchor_month_no_data_returns_empty_shape(session, test_user, test_workspace):
+    """A month with no transactions returns the normal empty shape, not an error."""
+    anchor_dt = _add_months(date.today(), -6)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, anchor_month=anchor_month,
+    )
+    bd = {b.key: b.value for b in report.summary.breakdowns}
+    assert bd["income"] == 0.0
+    assert bd["expenses"] == 0.0
+    assert report.composition == []
+    assert len(report.trend) > 0
+
+
+async def test_cash_flow_api_accepts_anchor_month_disables_forecast(
+    client, auth_headers, test_user, session, test_workspace
+):
+    """`anchor_month` scopes cash-flow to that month and disables forecast/baseline."""
+    acct = await _make_account(session, test_user.id, "CF Anchor")
+    anchor_dt = _add_months(date.today(), -2)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+    anchor_date = date(anchor_dt.year, anchor_dt.month, 5)
+
+    await _add_txn(session, test_user.id, acct.id, 2000, "credit", anchor_date, source="opening_balance")
+    await _add_txn(session, test_user.id, acct.id, 300, "debit", anchor_date + timedelta(days=3))
+
+    resp = await client.get(
+        "/api/reports/cash-flow",
+        params={"anchor_month": anchor_month, "baseline": "true"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    # Forecast/baseline are off even though baseline=true was requested.
+    assert data["meta"]["forecast_start_date"] is None
+    assert data["meta"]["baseline_active"] is False
+    assert all(dp["date"].startswith(anchor_month) for dp in data["trend"])
+    # Ending balance reflects the whole anchor month's actuals.
+    assert data["trend"][-1]["value"] == pytest.approx(1700.0)
+
+
+async def test_cash_flow_anchor_month_no_data_returns_empty_shape(session, test_user, test_workspace):
+    """A month with no transactions returns the normal empty shape, not an error."""
+    anchor_dt = _add_months(date.today(), -6)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, anchor_month=anchor_month,
+    )
+    assert report.meta.forecast_start_date is None
+    assert report.meta.baseline_active is False
+    assert len(report.trend) > 0
+
+
+async def test_net_worth_month_mode_change_vs_previous_month(session, test_user, test_workspace):
+    """Month mode compares net worth against the previous calendar month's snapshot."""
+    acct = await _make_account(session, test_user.id, "NW PrevCompare")
+    anchor_dt = _add_months(date.today(), -2)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+    previous_dt = _add_months(anchor_dt, -1)
+    previous_date = date(previous_dt.year, previous_dt.month, 5)
+    anchor_date = date(anchor_dt.year, anchor_dt.month, 5)
+
+    await _add_txn(session, test_user.id, acct.id, 1000, "credit", previous_date, source="opening_balance")
+    await _add_txn(session, test_user.id, acct.id, 500, "credit", anchor_date)
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, anchor_month=anchor_month,
+    )
+    assert report.summary.primary_value == pytest.approx(1500.0)
+    assert report.summary.change_amount == pytest.approx(500.0)
+    assert report.summary.change_percent == pytest.approx(50.0)
+
+
+async def test_net_worth_month_mode_change_no_previous_data(session, test_user, test_workspace):
+    """No transactions before the anchor month → change_percent is None, not a crash."""
+    acct = await _make_account(session, test_user.id, "NW NoPrev")
+    anchor_dt = _add_months(date.today(), -2)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+    anchor_date = date(anchor_dt.year, anchor_dt.month, 5)
+    await _add_txn(session, test_user.id, acct.id, 800, "credit", anchor_date, source="opening_balance")
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, anchor_month=anchor_month,
+    )
+    assert report.summary.primary_value == pytest.approx(800.0)
+    assert report.summary.change_amount == pytest.approx(800.0)
+    assert report.summary.change_percent is None
+
+
+async def test_income_expenses_month_mode_change_vs_previous_month(session, test_user, test_workspace):
+    """Month mode compares total net income against the previous calendar month's total."""
+    acct = await _make_account(session, test_user.id, "IE PrevCompare")
+    anchor_dt = _add_months(date.today(), -2)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+    previous_dt = _add_months(anchor_dt, -1)
+    previous_date = date(previous_dt.year, previous_dt.month, 5)
+    anchor_date = date(anchor_dt.year, anchor_dt.month, 5)
+
+    # Previous month: net income 1000 (2000 credit - 1000 debit).
+    await _add_txn(session, test_user.id, acct.id, 2000, "credit", previous_date)
+    await _add_txn(session, test_user.id, acct.id, 1000, "debit", previous_date)
+    # Anchor month: net income 1800 (3000 credit - 1200 debit).
+    await _add_txn(session, test_user.id, acct.id, 3000, "credit", anchor_date)
+    await _add_txn(session, test_user.id, acct.id, 1200, "debit", anchor_date)
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, anchor_month=anchor_month,
+    )
+    assert report.summary.primary_value == pytest.approx(1800.0)
+    assert report.summary.change_amount == pytest.approx(800.0)
+    assert report.summary.change_percent == pytest.approx(80.0)
+
+
+async def test_cash_flow_month_mode_change_vs_previous_month(session, test_user, test_workspace):
+    """Month mode compares the ending balance against the previous month's ending balance."""
+    acct = await _make_account(session, test_user.id, "CF PrevCompare")
+    anchor_dt = _add_months(date.today(), -2)
+    anchor_month = f"{anchor_dt.year:04d}-{anchor_dt.month:02d}"
+    previous_dt = _add_months(anchor_dt, -1)
+    previous_date = date(previous_dt.year, previous_dt.month, 5)
+    anchor_date = date(anchor_dt.year, anchor_dt.month, 5)
+
+    # Previous month ends with balance 2000; anchor month adds 500 more.
+    await _add_txn(session, test_user.id, acct.id, 2000, "credit", previous_date, source="opening_balance")
+    await _add_txn(session, test_user.id, acct.id, 500, "credit", anchor_date)
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, anchor_month=anchor_month,
+    )
+    assert report.summary.primary_value == pytest.approx(2500.0)
+    assert report.summary.change_amount == pytest.approx(500.0)
+    assert report.summary.change_percent == pytest.approx(25.0)
 
 
 async def test_cash_flow_accrual_mode_pending_cc(session, test_user, test_workspace):

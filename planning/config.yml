@@ -1,0 +1,25 @@
+# Sync configuration for the planning/ directory.
+# The repo is the source of truth; everything below is an optional mirror target.
+# Commit this file so the whole team shares the same destinations.
+
+confluence:
+  space_key: ""            # e.g. "ENG" — the space KEY, not its display name
+  project_page_id: ""      # required for sync: ID of the project's parent page in Confluence
+  project_page_title: ""   # human-readable title of the parent page (for reference only)
+
+jira:
+  # Jira project that holds epics, tasks, and bugs for these specs.
+  project_key: ""          # e.g. "DATA"
+  issue_types:
+    epic: "Epic"           # Feature spec → Jira Epic
+    bug: "Bug"             # Bug-type spec → Jira Bug
+    spike: "Task"          # Spike spec → Jira Task (override if your project uses Story)
+    refactor: "Task"       # Refactor spec → Jira Task
+    task: "Task"           # Task file inside any spec → Jira Task (linked to parent issue)
+                           # "task" is also the fallback when any other type is unavailable in the project
+
+sync:
+  auto: false              # true = sync automatically whenever a planning doc changes
+
+defaults:
+  artifact_language: en    # artifacts, code, and code comments are always English

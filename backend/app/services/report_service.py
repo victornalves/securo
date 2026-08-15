@@ -70,6 +70,31 @@ def _report_start_date(
     return start.replace(day=1)
 
 
+def _month_bounds(anchor_month: str) -> tuple[date, date]:
+    """Resolve the first and last calendar day of a `YYYY-MM` anchor month."""
+    year, month = map(int, anchor_month.split("-"))
+    start = date(year, month, 1)
+    end = start.replace(day=calendar.monthrange(year, month)[1])
+    return start, end
+
+
+def _shift_month(anchor_month: str, delta: int) -> str:
+    """Shift a `YYYY-MM` anchor month by `delta` months, handling year rollover."""
+    year, month = map(int, anchor_month.split("-"))
+    total = year * 12 + (month - 1) + delta
+    new_year, new_month = divmod(total, 12)
+    return f"{new_year:04d}-{new_month + 1:02d}"
+
+
+def _previous_month_change(
+    current_value: float, previous_value: float
+) -> tuple[float, float | None]:
+    """Change amount/percent of `current_value` vs. the previous calendar month's value."""
+    change_amount = current_value - previous_value
+    change_percent = (change_amount / abs(previous_value) * 100) if previous_value else None
+    return change_amount, change_percent
+
+
 async def _asset_value_at(
     session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
     primary_currency: str = "USD",
@@ -277,19 +302,29 @@ async def get_net_worth_report(
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
+    anchor_month: str | None = None,
 ) -> ReportResponse:
-    """Build a full ReportResponse for net worth over time."""
+    """Build a full ReportResponse for net worth over time.
+
+    `anchor_month` (`YYYY-MM`), when set, scopes the report to that exact
+    calendar month instead of the usual rolling window ending today;
+    `months`/`period` are ignored in that case.
+    """
     # A wallet-only collection (wallets, no accounts) still filters.
     if asset_group_ids is not None and account_ids is None:
         account_ids = []
     today = date.today()
-    start = _report_start_date(today, months, period)
+    if anchor_month is not None:
+        start, end = _month_bounds(anchor_month)
+    else:
+        start = _report_start_date(today, months, period)
+        end = today
 
     # Get user's primary currency
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
-    points = _date_points(start, today, interval)
+    points = _date_points(start, end, interval)
 
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
@@ -303,15 +338,24 @@ async def get_net_worth_report(
     current = trend[-1] if trend else ReportDataPoint(
         date="", value=0, breakdowns={"accounts": 0, "assets": 0, "liabilities": 0}
     )
-    baseline = await _net_worth_at(session, workspace_id, start, primary_currency, account_ids, asset_group_ids)
-    previous = baseline if trend else current
 
-    change_amount = current.value - previous.value
-    change_percent = (
-        (change_amount / abs(previous.value) * 100)
-        if previous.value != 0
-        else None
-    )
+    if anchor_month is not None:
+        # Month mode: compare against the previous calendar month's closing
+        # snapshot instead of this period's own start.
+        _, previous_month_end = _month_bounds(_shift_month(anchor_month, -1))
+        previous_dp = await _net_worth_at(
+            session, workspace_id, previous_month_end, primary_currency, account_ids, asset_group_ids,
+        )
+        change_amount, change_percent = _previous_month_change(current.value, previous_dp.value)
+    else:
+        baseline = await _net_worth_at(session, workspace_id, start, primary_currency, account_ids, asset_group_ids)
+        previous = baseline if trend else current
+        change_amount = current.value - previous.value
+        change_percent = (
+            (change_amount / abs(previous.value) * 100)
+            if previous.value != 0
+            else None
+        )
 
     summary = ReportSummary(
         primary_value=current.value,
@@ -346,8 +390,9 @@ async def get_net_worth_report(
         interval=interval,
     )
 
-    # The last trend point is always today — reuse its per-item composition for
-    # the response-level `composition` field (current snapshot for the donut).
+    # The last trend point is always `end` (today, or the anchor month's last
+    # day) — reuse its per-item composition for the response-level
+    # `composition` field (current snapshot for the donut).
     composition = trend[-1].composition if trend else []
 
     return ReportResponse(summary=summary, trend=trend, meta=meta, composition=composition)
@@ -380,12 +425,23 @@ async def get_income_expenses_report(
     account_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
     days: int | None = None,
+    anchor_month: str | None = None,
+    _compare_previous_month: bool = True,
 ) -> ReportResponse:
-    """Build a ReportResponse for income vs expenses over time."""
+    """Build a ReportResponse for income vs expenses over time.
+
+    `anchor_month` (`YYYY-MM`), when set, scopes the report to that exact
+    calendar month instead of the usual rolling window ending today;
+    `months`/`period`/`days` are ignored in that case.
+    """
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     today = date.today()
-    start = _report_start_date(today, months, period, days)
+    if anchor_month is not None:
+        start, end = _month_bounds(anchor_month)
+    else:
+        start = _report_start_date(today, months, period, days)
+        end = today
 
     # Get user's primary currency + global reporting mode
     user = await session.get(User, user_id)
@@ -409,7 +465,7 @@ async def get_income_expenses_report(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             report_date >= start,
-            report_date <= today,
+            report_date <= end,
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
             *acct_filter,
@@ -466,7 +522,7 @@ async def get_income_expenses_report(
             Transaction.workspace_id == workspace_id,
             _TS_.group_member_id.notin_(own_member_ids_sq),
             report_date >= start,
-            report_date <= today,
+            report_date <= end,
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
         )
@@ -529,7 +585,7 @@ async def get_income_expenses_report(
             Transaction.user_id != user_id,
             Transaction.workspace_id != workspace_id,
             report_date >= start,
-            report_date <= today,
+            report_date <= end,
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
         )
@@ -560,7 +616,7 @@ async def get_income_expenses_report(
     from app.services.dashboard_service import _month_range, _get_recurring_projections
 
     cursor = start
-    while cursor <= today:
+    while cursor <= end:
         m_start, m_end = _month_range(cursor)
         # A day-window range can start mid-month: only project occurrences that
         # fall inside the requested window.
@@ -586,7 +642,7 @@ async def get_income_expenses_report(
             cursor = date(cursor.year, cursor.month + 1, 1)
 
     # Generate all expected date points and map to results
-    points = _date_points(start, today, interval)
+    points = _date_points(start, end, interval)
     trend: list[ReportDataPoint] = []
     total_income = 0.0
     total_expenses = 0.0
@@ -608,15 +664,26 @@ async def get_income_expenses_report(
 
     total_net = round(total_income - total_expenses, 2)
 
-    # Compare last point vs first point net income
-    current_net = trend[-1].value if trend else 0.0
-    previous_net = trend[0].value if len(trend) > 1 else 0.0
-    change_amount = current_net - previous_net
-    change_percent = (
-        (change_amount / abs(previous_net) * 100)
-        if previous_net != 0
-        else None
-    )
+    if anchor_month is not None and _compare_previous_month:
+        # Month mode: compare this month's total net against the previous
+        # calendar month's total net, not the trend's first-vs-last bucket.
+        previous_report = await get_income_expenses_report(
+            session, workspace_id, user_id, interval=interval, account_ids=account_ids,
+            anchor_month=_shift_month(anchor_month, -1), _compare_previous_month=False,
+        )
+        change_amount, change_percent = _previous_month_change(
+            total_net, previous_report.summary.primary_value
+        )
+    else:
+        # Compare last point vs first point net income
+        current_net = trend[-1].value if trend else 0.0
+        previous_net = trend[0].value if len(trend) > 1 else 0.0
+        change_amount = current_net - previous_net
+        change_percent = (
+            (change_amount / abs(previous_net) * 100)
+            if previous_net != 0
+            else None
+        )
 
     summary = ReportSummary(
         primary_value=total_net,
@@ -667,7 +734,7 @@ async def get_income_expenses_report(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             report_date >= start,
-            report_date <= today,
+            report_date <= end,
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
             *acct_filter,
@@ -695,7 +762,7 @@ async def get_income_expenses_report(
     # owner_split_offset_by_category is debit-only). Keeps the report's
     # composition consistent with summary totals under share-only model.
     full_range_offset = {} if filtered else await owner_split_offset_by_category(
-        session, user_id, start, today + timedelta(days=1),
+        session, user_id, start, end + timedelta(days=1),
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
     )
@@ -729,7 +796,7 @@ async def get_income_expenses_report(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             report_date >= start,
-            report_date <= today,
+            report_date <= end,
             Transaction.source != "opening_balance",
             Transaction.type == "debit",
             Transaction.transfer_pair_id.is_(None),
@@ -767,7 +834,7 @@ async def get_income_expenses_report(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             report_date >= start,
-            report_date <= today,
+            report_date <= end,
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
             *acct_filter,
@@ -814,7 +881,7 @@ async def get_income_expenses_report(
             Transaction.type == "debit",
             _TS_.group_member_id.notin_(own_member_ids_sq),
             report_date >= start,
-            report_date <= today,
+            report_date <= end,
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
         )
@@ -844,7 +911,7 @@ async def get_income_expenses_report(
     # Add recurring projections to composition and category trend
     cat_cache: dict[str, dict] = {}
     cursor2 = start
-    while cursor2 <= today:
+    while cursor2 <= end:
         m_start, m_end = _month_range(cursor2)
         projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
         period_label = _format_date_label(cursor2, interval)
@@ -1002,6 +1069,31 @@ _BASELINE_MAX_LOOKBACK_MONTHS = 12
 _PAST_HISTORY_MONTHS = 1
 
 
+async def _get_earliest_transaction_date(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> date | None:
+    """Earliest (oldest) qualifying transaction date for a workspace."""
+    result = await session.execute(
+        select(func.min(Transaction.date))
+        .join(Account, Transaction.account_id == Account.id)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Account.is_closed == False,
+            Transaction.source != "opening_balance",
+            counts_as_pnl(),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_earliest_transaction_month(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> str | None:
+    """Earliest (oldest) qualifying transaction month for a workspace, as `YYYY-MM`."""
+    earliest = await _get_earliest_transaction_date(session, workspace_id)
+    return earliest.strftime("%Y-%m") if earliest else None
+
+
 async def _get_baseline_projection(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1034,19 +1126,7 @@ async def _get_baseline_projection(
     """
     acct_filter = [Transaction.account_id.in_(account_ids)] if account_ids is not None else []
     cap_start = _add_months(today, -_BASELINE_MAX_LOOKBACK_MONTHS)
-    earliest_result = await session.execute(
-        select(func.min(Transaction.date))
-        .join(Account, Transaction.account_id == Account.id)
-        .where(
-            Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
-            Transaction.date <= today,
-            Transaction.source != "opening_balance",
-            counts_as_pnl(),
-            *acct_filter,
-        )
-    )
-    earliest_date = earliest_result.scalar_one_or_none()
+    earliest_date = await _get_earliest_transaction_date(session, workspace_id)
     if earliest_date is None:
         return [], 0
     window_start = max(earliest_date, cap_start)
@@ -1122,6 +1202,7 @@ async def get_cash_flow_report(
     currency: str = "USD",
     baseline: bool = False,
     account_ids: Optional[list[uuid.UUID]] = None,
+    anchor_month: str | None = None,
 ) -> ReportResponse:
     """Cash flow chart with a short past window plus a forward projection.
 
@@ -1131,6 +1212,10 @@ async def get_cash_flow_report(
     applying either deterministic recurring projections (default) or a
     historical-mean baseline (when ``baseline=True``) — see
     ``_get_baseline_projection`` for the latter.
+
+    `anchor_month` (`YYYY-MM`), when set, drops the forecast/baseline
+    entirely and returns only the historical daily actuals for that
+    calendar month — `months`/`baseline` are ignored in that case.
 
     Respects the global ``credit_card_accounting_mode`` setting:
       - **cash**: flows queried by ``Transaction.date``.
@@ -1145,8 +1230,14 @@ async def get_cash_flow_report(
 
     acct_filter = [Transaction.account_id.in_(account_ids)] if account_ids is not None else []
     today = date.today()
-    end = _add_months(today, months)
-    chart_start = _add_months(today, -_PAST_HISTORY_MONTHS)
+    if anchor_month is not None:
+        chart_start, end = _month_bounds(anchor_month)
+        pivot = end  # month mode: the whole month is "past" — no forward window
+    else:
+        end = _add_months(today, months)
+        chart_start = _add_months(today, -_PAST_HISTORY_MONTHS)
+        pivot = today
+    effective_baseline = baseline and anchor_month is None
 
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
@@ -1156,9 +1247,11 @@ async def get_cash_flow_report(
 
     # "Saldo Atual" shown in the hero card. The walk is anchored at this
     # value (not at balance-at-chart_start) so opening-balance transactions
-    # inside the past-history window can't introduce drift.
+    # inside the past-history window can't introduce drift. In month mode,
+    # `pivot` is the anchor month's last day, so this is that month's
+    # closing balance instead of today's.
     current_balance = await _balance_at(
-        session, workspace_id, today, primary_currency_hint=primary_currency,
+        session, workspace_id, pivot, primary_currency_hint=primary_currency,
         account_ids=account_ids,
     )
 
@@ -1199,7 +1292,7 @@ async def get_cash_flow_report(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             flow_date_col > chart_start,
-            flow_date_col <= today,
+            flow_date_col <= pivot,
             Transaction.source != "opening_balance",
             counts_as_pnl(),
             *acct_filter,
@@ -1227,7 +1320,7 @@ async def get_cash_flow_report(
         .where(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
-            flow_date_col > today,
+            flow_date_col > pivot,
             flow_date_col <= end,
             Transaction.source != "opening_balance",
             counts_as_pnl(),
@@ -1261,8 +1354,8 @@ async def get_cash_flow_report(
                 Transaction.workspace_id == workspace_id,
                 Account.is_closed == False,
                 Account.type == "credit_card",
-                Transaction.date <= today,
-                Transaction.effective_date > today,
+                Transaction.date <= pivot,
+                Transaction.effective_date > pivot,
                 Transaction.effective_date <= end,
                 Transaction.source != "opening_balance",
                 counts_as_pnl(),
@@ -1289,19 +1382,22 @@ async def get_cash_flow_report(
     cat_cache: dict[str, dict] = {}
     baseline_lookback_days = 0
 
-    if baseline:
+    if anchor_month is not None:
+        # Month mode: purely historical — no forward projection at all.
+        projections = []
+    elif effective_baseline:
         projections, baseline_lookback_days = await _get_baseline_projection(
-            session, workspace_id, today, end, primary_currency, _to_primary, account_ids,
+            session, workspace_id, pivot, end, primary_currency, _to_primary, account_ids,
         )
     else:
         projections = await _get_recurring_projections(
-            session, workspace_id, today + timedelta(days=1), end + timedelta(days=1),
+            session, workspace_id, pivot + timedelta(days=1), end + timedelta(days=1),
             account_ids,
         )
 
     for proj in projections:
         d = proj["date"]
-        if d <= today or d > end:
+        if d <= pivot or d > end:
             continue
         amount_primary = await _to_primary(
             Decimal(str(proj["amount"])), proj["currency"]
@@ -1314,7 +1410,7 @@ async def get_cash_flow_report(
         if cat_id:
             cat_id_str = str(cat_id)
         else:
-            cat_id_str = "baseline" if baseline else "uncategorized"
+            cat_id_str = "baseline" if effective_baseline else "uncategorized"
         group = "income" if proj["type"] == "credit" else "expenses"
         if cat_id and cat_id_str not in cat_cache:
             cat_row = await session.execute(
@@ -1334,27 +1430,28 @@ async def get_cash_flow_report(
             cat_totals[key] = {"label": info["label"], "color": info["color"], "value": 0.0}
         cat_totals[key]["value"] += amount_primary
 
-    # 4. Walk day-by-day. The walk is anchored at today's authoritative
-    #    balance (``current_balance`` from ``_balance_at``) rather than at
+    # 4. Walk day-by-day. The walk is anchored at `pivot`'s authoritative
+    #    balance (``current_balance`` from ``_balance_at`` — today's balance,
+    #    or the anchor month's closing balance in month mode) rather than at
     #    ``chart_starting_balance``: opening-balance transactions are excluded
     #    from the past-actuals query, so a forward walk seeded from
     #    ``chart_starting_balance`` would drift if any opening balance falls
-    #    inside the past-history window. Anchoring at today eliminates that
+    #    inside the past-history window. Anchoring at `pivot` eliminates that
     #    class of bug and keeps the past trend visually correct.
-    daily_balance: dict[date, float] = {today: current_balance}
+    daily_balance: dict[date, float] = {pivot: current_balance}
     daily_inflow: dict[date, float] = {}
     daily_outflow: dict[date, float] = {}
 
-    # Today's own inflow/outflow bucket (for tooltip), but the balance at
-    # end-of-today is already current_balance regardless of today's flows
+    # Pivot day's own inflow/outflow bucket (for tooltip), but the balance at
+    # end-of-pivot is already current_balance regardless of that day's flows
     # (they're folded into the authoritative number from _balance_at).
-    today_bucket = flows.get(today, {"inflow": 0.0, "outflow": 0.0})
-    daily_inflow[today] = today_bucket["inflow"]
-    daily_outflow[today] = today_bucket["outflow"]
+    pivot_bucket = flows.get(pivot, {"inflow": 0.0, "outflow": 0.0})
+    daily_inflow[pivot] = pivot_bucket["inflow"]
+    daily_outflow[pivot] = pivot_bucket["outflow"]
 
     # Backward walk: balance(d-1) = balance(d) - net_flow(d).
     running = current_balance
-    cursor_d = today
+    cursor_d = pivot
     while cursor_d > chart_start:
         bucket = flows.get(cursor_d, {"inflow": 0.0, "outflow": 0.0})
         running -= bucket["inflow"] - bucket["outflow"]
@@ -1364,9 +1461,10 @@ async def get_cash_flow_report(
         daily_inflow[cursor_d] = prev_bucket["inflow"]
         daily_outflow[cursor_d] = prev_bucket["outflow"]
 
-    # Forward walk: balance(d+1) = balance(d) + net_flow(d+1).
+    # Forward walk: balance(d+1) = balance(d) + net_flow(d+1). No-op in month
+    # mode, since `pivot == end` there.
     running = current_balance
-    cursor_d = today
+    cursor_d = pivot
     while cursor_d < end:
         cursor_d = cursor_d + timedelta(days=1)
         bucket = flows.get(cursor_d, {"inflow": 0.0, "outflow": 0.0})
@@ -1430,15 +1528,27 @@ async def get_cash_flow_report(
     forward_inflow = 0.0
     forward_outflow = 0.0
     for d, bucket in flows.items():
-        if today < d <= end:
+        if pivot < d <= end:
             forward_inflow += bucket["inflow"]
             forward_outflow += bucket["outflow"]
     total_inflow = round(forward_inflow, 2)
     total_outflow = round(forward_outflow, 2)
-    change_amount = round(ending_balance - current_balance, 2)
-    change_percent = (
-        (change_amount / abs(current_balance) * 100) if current_balance != 0 else None
-    )
+
+    if anchor_month is not None:
+        # Month mode: compare this month's ending balance against the
+        # previous calendar month's ending balance, not today's balance.
+        _, previous_month_end = _month_bounds(_shift_month(anchor_month, -1))
+        previous_ending_balance = await _balance_at(
+            session, workspace_id, previous_month_end, primary_currency_hint=primary_currency,
+            account_ids=account_ids,
+        )
+        raw_change_amount, change_percent = _previous_month_change(ending_balance, previous_ending_balance)
+        change_amount = round(raw_change_amount, 2)
+    else:
+        change_amount = round(ending_balance - current_balance, 2)
+        change_percent = (
+            (change_amount / abs(current_balance) * 100) if current_balance != 0 else None
+        )
 
     summary = ReportSummary(
         primary_value=ending_balance,
@@ -1469,9 +1579,9 @@ async def get_cash_flow_report(
         series_keys=["balance"],
         currency=primary_currency,
         interval=interval,
-        forecast_start_date=_format_date_label(today, interval),
-        baseline_active=baseline,
-        baseline_lookback_days=baseline_lookback_days if baseline else None,
+        forecast_start_date=None if anchor_month is not None else _format_date_label(pivot, interval),
+        baseline_active=effective_baseline,
+        baseline_lookback_days=baseline_lookback_days if effective_baseline else None,
     )
 
     composition: list[ReportCompositionItem] = []

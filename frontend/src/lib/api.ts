@@ -1100,11 +1100,15 @@ export const collections = {
 
 // Reports
 export const reports = {
-  netWorth: async (months = 12, interval = 'monthly', accountIds?: string[], assetGroupIds?: string[], period?: 'ytd'): Promise<ReportResponse> => {
+  // `anchorMonth` ("YYYY-MM"), when set, scopes the report to that exact
+  // calendar month instead of the rolling window the other params describe.
+  // The backend ignores months/period/days/baseline when it's present, so
+  // callers can keep sending their current values as-is.
+  netWorth: async (months = 12, interval = 'monthly', accountIds?: string[], assetGroupIds?: string[], period?: 'ytd', anchorMonth?: string): Promise<ReportResponse> => {
     const hasFilter = (accountIds && accountIds.length > 0) || (assetGroupIds && assetGroupIds.length > 0)
     const { data } = await api.get('/reports/net-worth', {
       params: {
-        months, interval, period,
+        months, interval, period, anchor_month: anchorMonth,
         ...(accountIds && accountIds.length > 0 ? { account_ids: accountIds } : {}),
         ...(assetGroupIds && assetGroupIds.length > 0 ? { asset_group_ids: assetGroupIds } : {}),
       },
@@ -1114,14 +1118,19 @@ export const reports = {
   },
   // `days` requests an exact rolling window ending today, instead of the
   // month-aligned window `months` produces.
-  incomeExpenses: async (months = 12, interval = 'monthly', accountIds?: string[], period?: 'ytd', days?: number): Promise<ReportResponse> => {
+  incomeExpenses: async (months = 12, interval = 'monthly', accountIds?: string[], period?: 'ytd', days?: number, anchorMonth?: string): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
-    const { data } = await api.get('/reports/income-expenses', { params: { months, interval, period, days, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    const { data } = await api.get('/reports/income-expenses', { params: { months, interval, period, days, anchor_month: anchorMonth, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
-  cashFlow: async (months = 6, interval = 'daily', baseline = false, accountIds?: string[]): Promise<ReportResponse> => {
+  cashFlow: async (months = 6, interval = 'daily', baseline = false, accountIds?: string[], anchorMonth?: string): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
-    const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, anchor_month: anchorMonth, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    return data
+  },
+  // Earliest navigable month for the month-mode stepper's lower bound.
+  bounds: async (): Promise<{ earliest_month: string | null }> => {
+    const { data } = await api.get('/reports/bounds')
     return data
   },
 }

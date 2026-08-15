@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
+import { currentMonth, monthLabel, shiftMonth } from '@/lib/month-utils'
+import { MonthStepper } from '@/components/month-stepper'
 import {
   AreaChart,
   Area,
@@ -134,6 +137,12 @@ const REPORT_TABS: ReportTab[] = [
   { key: 'money_map', labelKey: 'reports.moneyMap', enabled: true },
 ]
 
+const MONTH_REGEX = /^\d{4}-\d{2}$/
+
+function parseMonth(yearMonth: string): Date {
+  return new Date(`${yearMonth}-01T00:00:00`)
+}
+
 export default function ReportsPage() {
   const { t } = useTranslation()
   const { mask, privacyMode, MASK } = usePrivacyMode()
@@ -149,6 +158,92 @@ export default function ReportsPage() {
   const [sparklinePage, setSparklinePage] = useState(0)
   const [cashFlowBaseline, setCashFlowBaseline] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+
+  // Range/Month toggle — 'month' scopes every tab to a single calendar month
+  // via `anchor_month` instead of a rolling window. Synced to the URL
+  // (?mode=month&month=2026-03) the same way dashboard.tsx syncs `?month=`.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [mode, setMode] = useState<'range' | 'month'>(
+    () => (searchParams.get('mode') === 'month' ? 'month' : 'range')
+  )
+  const [month, setMonth] = useState<string>(() => {
+    const m = searchParams.get('month')
+    return m && MONTH_REGEX.test(m) ? m : currentMonth()
+  })
+  const prevSearchRef = useRef<string | null>(null)
+  // Set right before the URL->state effect updates mode/month, so the
+  // state->URL effect that follows knows the change came from a URL
+  // navigation (back/forward, or a link) and must not push another history
+  // entry on top of it — otherwise every back/forward step re-pushes the
+  // entry it just landed on, corrupting the history stack.
+  const syncingFromUrlRef = useRef(false)
+
+  const { data: bounds } = useQuery({
+    queryKey: ['reports', 'bounds'],
+    queryFn: reports.bounds,
+  })
+
+  // Sync mode/month from the URL when navigating (e.g. back/forward button).
+  // This also re-fires as an echo of our own writes below (they change
+  // `searchParams` too) — only flag it as a URL-driven change, and only
+  // update state, when the derived value actually differs from what's
+  // already set, so a same-content echo doesn't leave the guard flag
+  // dangling for the next real user action to misread.
+  useEffect(() => {
+    const search = searchParams.toString()
+    if (prevSearchRef.current === search) return
+    prevSearchRef.current = search
+
+    const urlMode = searchParams.get('mode') === 'month' ? 'month' : 'range'
+    const m = searchParams.get('month')
+    const urlMonth = m && MONTH_REGEX.test(m) ? m : null
+
+    setMode((prev) => {
+      if (prev === urlMode) return prev
+      syncingFromUrlRef.current = true
+      return urlMode
+    })
+    if (urlMonth) {
+      setMonth((prev) => {
+        if (prev === urlMonth) return prev
+        syncingFromUrlRef.current = true
+        return urlMonth
+      })
+    }
+  }, [searchParams])
+
+  // Sync mode/month back to the URL. The first run (mount) replaces — the
+  // state already matches the URL it was derived from, so it shouldn't add
+  // a history entry. Every subsequent user-driven change pushes a new entry
+  // so browser back/forward can step through mode/month changes.
+  const didMountRef = useRef(false)
+  useEffect(() => {
+    if (syncingFromUrlRef.current) {
+      syncingFromUrlRef.current = false
+      didMountRef.current = true
+      return
+    }
+    const params = new URLSearchParams(window.location.search)
+    if (mode === 'month') {
+      params.set('mode', 'month')
+      params.set('month', month)
+    } else {
+      params.delete('mode')
+      params.delete('month')
+    }
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      setSearchParams(params, { replace: true })
+    } else {
+      setSearchParams(params)
+    }
+    // `setSearchParams` is intentionally excluded — react-router-dom hands
+    // back a new reference on every navigation, and reacting to that alone
+    // (with no actual mode/month change) pushed a spurious duplicate
+    // history entry on every update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, month])
+
   // Active Collection filter (issue #105): scope all report tabs to its
   // accounts; net worth also includes the collection's wallets' assets.
   const { activeAccountIds, activeWalletIds } = useCollectionFilter()
@@ -196,14 +291,25 @@ export default function ReportsPage() {
     }
   }
 
+  // Month mode: net worth / income & expenses default to daily granularity
+  // so a one-month window still shows meaningful detail (cash flow is
+  // already daily by default; money map has no interval concept).
+  useEffect(() => {
+    if (mode === 'month' && (activeTab === 'net_worth' || activeTab === 'income_expenses')) {
+      setInterval('daily')
+    }
+  }, [mode, activeTab])
+
+  const anchorMonth = mode === 'month' ? month : undefined
+
   const { data, isLoading } = useQuery<ReportResponse>({
-    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds],
+    queryKey: ['reports', activeTab, mode, anchorMonth ?? rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds],
     queryFn: () =>
       isCashFlow
-        ? reports.cashFlow(months, interval, cashFlowBaseline, acctIds)
+        ? reports.cashFlow(months, interval, cashFlowBaseline, acctIds, anchorMonth)
         : activeTab === 'income_expenses' || isMoneyMap
-          ? reports.incomeExpenses(months, interval, acctIds, period, days)
-          : reports.netWorth(months, interval, acctIds, walletIds, period),
+          ? reports.incomeExpenses(months, interval, acctIds, period, days, anchorMonth)
+          : reports.netWorth(months, interval, acctIds, walletIds, period, anchorMonth),
     enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth'),
   })
 
@@ -219,7 +325,10 @@ export default function ReportsPage() {
   const NEGATIVE_SERIES = new Set(['liabilities'])
 
   const chartData = trend.map((dp) => {
-    const isPast = forecastStart ? dp.date < forecastStart : false
+    // No forecast boundary (month mode) → the whole trend is historical, so
+    // render it solid rather than defaulting every point into the dashed
+    // "forecast" series.
+    const isPast = forecastStart ? dp.date < forecastStart : true
     const isBoundary = forecastStart ? dp.date === forecastStart : false
     const breakdowns = meta?.type === 'net_worth'
       ? Object.fromEntries(Object.entries(dp.breakdowns).map(([k, v]) => [k, NEGATIVE_SERIES.has(k) ? -v : v]))
@@ -463,7 +572,7 @@ export default function ReportsPage() {
         title={t(currentTab.labelKey)}
         action={
           <div className="flex items-center gap-2">
-            {isCashFlow && (
+            {isCashFlow && mode === 'range' && (
               <div
                 className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
                   cashFlowBaseline
@@ -500,21 +609,46 @@ export default function ReportsPage() {
               </div>
             )}
             <div className="flex items-center rounded-lg border border-border bg-card overflow-hidden">
-              {rangeOptions.map((opt) => (
+              {(['range', 'month'] as const).map((m) => (
                 <button
-                  key={opt.key}
-                  onClick={() => { setRangeKey(opt.key); setSelectedDate(null) }}
+                  key={m}
+                  onClick={() => { setMode(m); setSelectedDate(null) }}
                   className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    rangeKey === opt.key
+                    mode === m
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                   }`}
                 >
-                  {t(`reports.${RANGE_LABELS[opt.key]}`)}
+                  {t(`reports.mode${m === 'range' ? 'Range' : 'Month'}`)}
                 </button>
               ))}
             </div>
-            <div className={`flex items-center rounded-lg border border-border bg-card overflow-hidden ${isMoneyMap ? 'hidden' : ''}`}>
+            {mode === 'month' ? (
+              <MonthStepper
+                value={month}
+                onChange={(m) => { setMonth(m); setSelectedDate(null) }}
+                locale={locale}
+                minDate={bounds?.earliest_month ? parseMonth(bounds.earliest_month) : undefined}
+                maxDate={new Date()}
+              />
+            ) : (
+              <div className="flex items-center rounded-lg border border-border bg-card overflow-hidden">
+                {rangeOptions.map((opt) => (
+                  <button
+                    key={opt.key}
+                    onClick={() => { setRangeKey(opt.key); setSelectedDate(null) }}
+                    className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      rangeKey === opt.key
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    {t(`reports.${RANGE_LABELS[opt.key]}`)}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className={`flex items-center rounded-lg border border-border bg-card overflow-hidden ${isMoneyMap || mode === 'month' ? 'hidden' : ''}`}>
               {intervalOptions.map((opt) => (
                 <button
                   key={opt.key}
@@ -593,6 +727,18 @@ export default function ReportsPage() {
                   {mask(`${changePrefix}${formatCurrency(summary?.change_amount ?? 0, userCurrency, locale)}`)}
                   {' '}{t(meta?.type === 'cash_flow' ? 'reports.vsToday' : 'reports.vsStart')}
                 </p>
+                {mode === 'month' && summary?.change_percent !== null && summary?.change_percent !== undefined && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {t('reports.summaryVsPrev', {
+                      month: monthLabel(shiftMonth(month, -1), locale).replace(/^\w/, (c) => c.toUpperCase()),
+                      delta: `${summary.change_percent >= 0 ? '+' : ''}${summary.change_percent.toFixed(1)}%`,
+                    })}
+                    {' '}
+                    <span className={summary.change_percent >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                      {summary.change_percent >= 0 ? '▲' : '▼'}
+                    </span>
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap gap-6">
                 {breakdownData.map((b) => (
@@ -691,7 +837,7 @@ export default function ReportsPage() {
                   </span>
                 </div>
               )}
-              {meta.type === 'cash_flow' && (
+              {meta.type === 'cash_flow' && forecastStart && (
                 <div className="flex items-center gap-1.5">
                   <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#6366F1' }} />
                   <span className="text-[11px] text-muted-foreground">

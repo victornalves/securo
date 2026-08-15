@@ -14,6 +14,14 @@ interface MonthStepperProps {
   /** Accessible labels for the prev/next buttons. */
   prevLabel?: string
   nextLabel?: string
+  /** Earliest navigable month (inclusive). Disables stepping/picking before it. */
+  minDate?: Date
+  /** Latest navigable month (inclusive). Disables stepping/picking past it. */
+  maxDate?: Date
+}
+
+function toYearMonth(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 /**
@@ -21,18 +29,26 @@ interface MonthStepperProps {
  * given month and emits onChange. Wiring (URL/date-range/query) lives in the
  * parent so the stepper stays a single source of truth on top of existing filters.
  */
-export function MonthStepper({ value, onChange, locale = 'pt-BR', prevLabel, nextLabel }: MonthStepperProps) {
+export function MonthStepper({
+  value, onChange, locale = 'pt-BR', prevLabel, nextLabel, minDate, maxDate,
+}: MonthStepperProps) {
   const [open, setOpen] = useState(false)
   const label = monthLabel(value, locale).replace(/^\w/, (c) => c.toUpperCase())
   const dateFnsLocale = resolveDateFnsLocale(locale)
+
+  const prevMonth = shiftMonth(value, -1)
+  const nextMonth = shiftMonth(value, 1)
+  const prevDisabled = minDate ? prevMonth < toYearMonth(minDate) : false
+  const nextDisabled = maxDate ? nextMonth > toYearMonth(maxDate) : false
 
   return (
     <div className="flex items-center gap-1 min-w-0">
       <button
         type="button"
         aria-label={prevLabel}
-        className="h-8 w-8 shrink-0 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-all text-base cursor-pointer"
-        onClick={() => onChange(shiftMonth(value, -1))}
+        disabled={prevDisabled}
+        className="h-8 w-8 shrink-0 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-all text-base cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+        onClick={() => onChange(prevMonth)}
       >
         &#8249;
       </button>
@@ -49,6 +65,8 @@ export function MonthStepper({ value, onChange, locale = 'pt-BR', prevLabel, nex
           <MonthPicker
             locale={dateFnsLocale}
             selectedMonth={new Date(`${value}-01T00:00:00`)}
+            minDate={minDate}
+            maxDate={maxDate}
             onMonthSelect={(date) => {
               if (!date) return
               const newMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
@@ -61,8 +79,9 @@ export function MonthStepper({ value, onChange, locale = 'pt-BR', prevLabel, nex
       <button
         type="button"
         aria-label={nextLabel}
-        className="h-8 w-8 shrink-0 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-all text-base cursor-pointer"
-        onClick={() => onChange(shiftMonth(value, 1))}
+        disabled={nextDisabled}
+        className="h-8 w-8 shrink-0 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-all text-base cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+        onClick={() => onChange(nextMonth)}
       >
         &#8250;
       </button>
