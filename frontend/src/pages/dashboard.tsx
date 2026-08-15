@@ -361,6 +361,26 @@ export default function DashboardPage() {
   const uncategorizedCount = summary?.pending_categorization ?? 0
   const uncategorizedAmount = summary?.pending_categorization_amount ?? 0
 
+  // Budget envelope totals: how much of the month's budgets is left. Only
+  // budgeted categories count on both sides — spending in categories with no
+  // budget is deliberately out, or the balance would answer a different
+  // question than "am I within the envelopes I set?".
+  // Hidden while a collection narrows the dashboard to some accounts, since
+  // /budgets/comparison takes no account filter and would compare a
+  // workspace-wide budget against workspace-wide spending in a filtered view.
+  const budgetTotals = useMemo(() => {
+    if (!budgetComparison || activeAccountIds !== null) return null
+    let budgeted = 0
+    let spent = 0
+    for (const b of budgetComparison) {
+      const amount = b.budget_amount != null ? Number(b.budget_amount) : 0
+      if (amount <= 0) continue
+      budgeted += amount
+      spent += Number(b.actual_amount)
+    }
+    return budgeted > 0 ? { budgeted, spent, remaining: budgeted - spent } : null
+  }, [budgetComparison, activeAccountIds])
+
   const [catSortDesc, setCatSortDesc] = useState(true)
 
   // Merged category bars data
@@ -698,6 +718,27 @@ export default function DashboardPage() {
                   </p>
                 )}
               </div>
+
+              {/* Budget balance */}
+              {budgetTotals && (
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-muted-foreground mb-0.5 flex items-center gap-1">
+                    {t('dashboard.budgetBalance')}
+                    <span title={t('dashboard.budgetBalanceTooltip')} className="inline-flex cursor-help">
+                      <HelpCircle className="h-3 w-3 text-muted-foreground/60" />
+                    </span>
+                  </p>
+                  <p className={`text-lg font-bold tabular-nums ${budgetTotals.remaining < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+                    {mask(formatCurrency(budgetTotals.remaining, primaryCurrency, locale))}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                    {mask(t('dashboard.budgetUsage', {
+                      spent: formatCurrency(budgetTotals.spent, primaryCurrency, locale),
+                      budget: formatCurrency(budgetTotals.budgeted, primaryCurrency, locale),
+                    }))}
+                  </p>
+                </div>
+              )}
 
               {/* Assets Value */}
               {!summaryLoading && summary?.assets_value && Object.values(summary.assets_value).reduce((a, b) => a + b, 0) > 0 && (
