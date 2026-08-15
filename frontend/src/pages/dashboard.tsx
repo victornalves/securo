@@ -372,7 +372,7 @@ export default function DashboardPage() {
         budgetMap.set(b.category_id, b)
       }
     }
-    return spending
+    const rows = spending
       .filter(s => s.category_id !== null)
       .map(s => {
         const budget = s.category_id ? budgetMap.get(s.category_id) : undefined
@@ -395,8 +395,34 @@ export default function DashboardPage() {
           momPct,
         }
       })
-      .sort((a, b) => catSortDesc ? b.actual - a.actual : a.actual - b.actual)
-  }, [spending, budgetComparison, catSortDesc])
+
+    // Categories budgeted for the month but not spent yet never appear in
+    // `spending`, so add them at zero — the month's budget picture is only
+    // complete if the untouched envelopes show up too. Skipped while a
+    // collection narrows the dashboard to some accounts: the comparison
+    // endpoint knows nothing about that filter, so those budgets would cover
+    // accounts the user has filtered out.
+    if (budgetComparison && activeAccountIds === null) {
+      const listed = new Set(rows.map(r => r.category_id))
+      for (const b of budgetComparison) {
+        if (listed.has(b.category_id)) continue
+        const budgetAmount = b.budget_amount != null ? Number(b.budget_amount) : null
+        if (!budgetAmount || budgetAmount <= 0) continue
+        rows.push({
+          category_id: b.category_id,
+          category_name: b.category_name,
+          category_icon: b.category_icon,
+          category_color: b.category_color,
+          actual: 0,
+          budget_amount: budgetAmount,
+          percentage_used: 0,
+          momPct: Number(b.prev_month_amount) > 0 ? -100 : null,
+        })
+      }
+    }
+
+    return rows.sort((a, b) => catSortDesc ? b.actual - a.actual : a.actual - b.actual)
+  }, [spending, budgetComparison, activeAccountIds, catSortDesc])
 
   const [txPage, setTxPage] = useState(1)
   const [txSortDesc, setTxSortDesc] = useState(true)
