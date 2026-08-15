@@ -544,7 +544,7 @@ async def test_income_expenses_api_validation(client, auth_headers):
 async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monkeypatch):
     """GET /reports/income-expenses passes period=ytd to service."""
 
-    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None, days=None):
+    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None, days=None, anchor_month=None):
         assert months == 12
         assert interval == "monthly"
         assert period == "ytd"
@@ -582,7 +582,7 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
     """GET /reports/income-expenses passes the exact day window to the service."""
     seen: dict = {}
 
-    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None, days=None):
+    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None, days=None, anchor_month=None):
         seen["days"] = days
         return ReportResponse(
             summary=ReportSummary(
@@ -2565,3 +2565,38 @@ async def test_cash_flow_chart_includes_past_history(
     delta_days = (today - first_date).days
     # _PAST_HISTORY_MONTHS = 1 (28–31 days depending on month).
     assert 27 <= delta_days <= 32
+
+
+# ---------------------------------------------------------------------------
+# API-level tests: /reports/bounds
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reports_bounds_endpoint_returns_earliest_month(
+    client, auth_headers, session: AsyncSession, test_user, test_workspace: User
+):
+    """GET /reports/bounds returns the workspace's earliest transaction month."""
+    account = await _make_manual_account(session, test_user.id, "Bounds Acct")
+    earliest_date = date.today() - timedelta(days=400)
+    await _add_txn(session, test_user.id, account.id, 1000, "credit", earliest_date)
+    await _add_txn(session, test_user.id, account.id, 200, "debit", date.today())
+
+    resp = await client.get("/api/reports/bounds", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["earliest_month"] == f"{earliest_date.year:04d}-{earliest_date.month:02d}"
+
+
+@pytest.mark.asyncio
+async def test_reports_bounds_endpoint_no_transactions(client, auth_headers):
+    """GET /reports/bounds with no transactions returns earliest_month: null."""
+    resp = await client.get("/api/reports/bounds", headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["earliest_month"] is None
+
+
+@pytest.mark.asyncio
+async def test_reports_bounds_api_requires_auth(client):
+    """GET /reports/bounds requires authentication."""
+    resp = await client.get("/api/reports/bounds")
+    assert resp.status_code == 401

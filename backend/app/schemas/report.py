@@ -56,3 +56,7 @@ class ReportResponse(BaseModel):
     meta: ReportMeta
     composition: list[ReportCompositionItem] = []
     category_trend: list[CategoryTrendItem] = []
+
+
+class ReportBoundsResponse(BaseModel):
+    earliest_month: str | None
