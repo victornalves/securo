@@ -1169,7 +1169,19 @@
     "amount": "Montant",
     "investments": "Investissements",
     "moneyMap": "Carte de l'argent",
-    "range30d": "30J"
+    "range30d": "30J",
+    "budget": "Budget",
+    "budgeted": "Budgétisé",
+    "realized": "Réalisé",
+    "outOfBudget": "Hors budget",
+    "budgetBalance": "Solde du budget",
+    "overBudget": "Dépassement",
+    "byCategory": "Par catégorie",
+    "difference": "Différence",
+    "percentUsed": "{{percent}} % du budget utilisé",
+    "budgetCoverage": "Budgétisé sur {{months}} des {{total}} mois",
+    "noBudgets": "Aucun budget défini pour cette période",
+    "budgetCollectionNotice": "Les budgets couvrent tout l'espace de travail et n'acceptent aucun filtre par compte. Désactivez la Collection active pour voir cet onglet."
   },
   "payees": {
     "addFavorite": "Ajouter aux favoris",

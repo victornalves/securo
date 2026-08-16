@@ -1169,7 +1169,19 @@
     "amount": "Amount",
     "investments": "Investments",
     "moneyMap": "Money Map",
-    "range30d": "30D"
+    "range30d": "30D",
+    "budget": "Budget",
+    "budgeted": "Budgeted",
+    "realized": "Realized",
+    "outOfBudget": "Out of budget",
+    "budgetBalance": "Budget Balance",
+    "overBudget": "Over budget",
+    "byCategory": "By category",
+    "difference": "Difference",
+    "percentUsed": "{{percent}}% of budget used",
+    "budgetCoverage": "Budgeted in {{months}} of {{total}} months",
+    "noBudgets": "No budgets set for this period",
+    "budgetCollectionNotice": "Budgets cover the whole workspace and take no account filter. Clear the active Collection to see this tab."
   },
   "payees": {
     "addFavorite": "Add to favorites",

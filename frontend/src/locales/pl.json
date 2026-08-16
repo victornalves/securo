@@ -1238,7 +1238,19 @@
     "amount": "Kwota",
     "investments": "Inwestycje",
     "moneyMap": "Mapa Pieniędzy",
-    "range30d": "30D"
+    "range30d": "30D",
+    "budget": "Budżet",
+    "budgeted": "Zaplanowano",
+    "realized": "Wykonano",
+    "outOfBudget": "Poza budżetem",
+    "budgetBalance": "Saldo budżetu",
+    "overBudget": "Przekroczenie budżetu",
+    "byCategory": "Wg kategorii",
+    "difference": "Różnica",
+    "percentUsed": "Wykorzystano {{percent}}% budżetu",
+    "budgetCoverage": "Zaplanowano w {{months}} z {{total}} miesięcy",
+    "noBudgets": "Brak budżetów w tym okresie",
+    "budgetCollectionNotice": "Budżety obejmują cały workspace i nie mają filtra kont. Wyczyść aktywną Kolekcję, aby zobaczyć tę zakładkę."
   },
   "payees": {
     "addFavorite": "Dodaj do ulubionych",

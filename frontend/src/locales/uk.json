@@ -1169,7 +1169,19 @@
     "amount": "Сума",
     "investments": "Інвестиції",
     "moneyMap": "Money Map",
-    "range30d": "30Д"
+    "range30d": "30Д",
+    "budget": "Бюджет",
+    "budgeted": "Заплановано",
+    "realized": "Факт",
+    "outOfBudget": "Поза бюджетом",
+    "budgetBalance": "Залишок бюджету",
+    "overBudget": "Перевищення бюджету",
+    "byCategory": "За категоріями",
+    "difference": "Різниця",
+    "percentUsed": "Використано {{percent}}% бюджету",
+    "budgetCoverage": "Заплановано в {{months}} з {{total}} місяців",
+    "noBudgets": "На цей період бюджети не задано",
+    "budgetCollectionNotice": "Бюджети діють на весь робочий простір і не фільтруються за рахунками. Очистьте активну Колекцію, щоб побачити цю вкладку."
   },
   "payees": {
     "addFavorite": "Додати до обраного",
