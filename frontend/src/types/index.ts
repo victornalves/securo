@@ -753,3 +753,44 @@ export interface ReportResponse {
   composition: ReportCompositionItem[]
   category_trend: CategoryTrendItem[]
 }
+
+// Budget report — category-shaped, with no time axis, so it carries its own
+// response types rather than bending ReportResponse's trend/composition shape.
+export interface BudgetReportRow {
+  category_id: string
+  category_name: string
+  category_icon: string
+  category_color: string
+  group_name: string | null
+  /** Sum of each month's effective envelope across the window. */
+  budgeted: number
+  realized: number
+  /** budgeted - realized; positive means room left. */
+  difference: number
+  percentage_used: number | null
+  months_in_window: number
+  /** Of those months, how many resolved an envelope above zero. */
+  months_budgeted: number
+}
+
+export interface BudgetReportSummary {
+  budgeted: number
+  /** Budgeted categories only — spending elsewhere is out_of_budget. */
+  realized: number
+  balance: number
+  out_of_budget: number
+}
+
+export interface BudgetReportMeta {
+  currency: string
+  start_date: string
+  end_date: string
+  months_in_window: number
+  anchor_month: string | null
+}
+
+export interface BudgetReportResponse {
+  rows: BudgetReportRow[]
+  summary: BudgetReportSummary
+  meta: BudgetReportMeta
+}
