@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Optional
@@ -397,3 +398,94 @@ async def get_budget_vs_actual(
 
     return sorted(comparisons, key=lambda x: float(x.actual_amount), reverse=True)
 
+
+@dataclass
+class CategoryWindowTotals:
+    """One budgeted category's envelope and spending over a multi-month window."""
+
+    category_id: uuid.UUID
+    category_name: str
+    category_icon: str
+    category_color: str
+    group_name: Optional[str]
+    budgeted: Decimal
+    realized: Decimal
+    months_budgeted: int
+
+
+async def get_budget_window_totals(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    months: list[date],
+    start: date,
+    end: date,
+) -> tuple[list[CategoryWindowTotals], Decimal]:
+    """Envelopes and spending over ``[start, end)``, split into budgeted
+    categories and one out-of-budget total.
+
+    ``months`` is the list of first-of-month dates the window covers, passed in
+    rather than derived here: window semantics belong to the caller, and the
+    list must follow the resolved start date rather than a month count.
+
+    A category earns a row when its envelopes over the window sum to more than
+    zero; a month with no envelope simply contributes nothing. Everything else
+    — never budgeted, budgeted only at zero, and uncategorized spending — is
+    summed into the second return value.
+    """
+    user = await session.get(User, user_id)
+    primary_currency = user.primary_currency if user else get_settings().default_currency
+    accounting_mode = await get_credit_card_accounting_mode(session)
+
+    # Envelopes, month by month. Resolution (override beats recurring default)
+    # stays in _build_budget_map — reimplementing it here to save queries is
+    # how this report would start disagreeing with /budgets.
+    budgeted: dict[str, Decimal] = {}
+    months_budgeted: dict[str, int] = {}
+    for month_start in months:
+        for cat_id, (amount, _is_recurring) in (
+            await _build_budget_map(session, workspace_id, month_start)
+        ).items():
+            budgeted[cat_id] = budgeted.get(cat_id, Decimal("0")) + amount
+            if amount > 0:
+                months_budgeted[cat_id] = months_budgeted.get(cat_id, 0) + 1
+
+    # Spending in one pass over the whole window, not month by month.
+    spending_map = await _actual_spending_by_category(
+        session, workspace_id, user_id, start, end,
+        primary_currency, accounting_mode,
+        include_uncategorized=True,
+    )
+
+    budgeted_ids = {cat_id for cat_id, amount in budgeted.items() if amount > 0}
+
+    out_of_budget = Decimal("0")
+    for cat_id, amount in spending_map.items():
+        if cat_id not in budgeted_ids:
+            out_of_budget += amount
+
+    if not budgeted_ids:
+        return [], out_of_budget
+
+    cats_result = await session.execute(
+        select(Category, CategoryGroup)
+        .outerjoin(CategoryGroup, Category.group_id == CategoryGroup.id)
+        .where(Category.workspace_id == workspace_id)
+    )
+
+    rows = [
+        CategoryWindowTotals(
+            category_id=category.id,
+            category_name=category.name,
+            category_icon=category.icon,
+            category_color=category.color,
+            group_name=group.name if group else None,
+            budgeted=budgeted[str(category.id)],
+            realized=spending_map.get(str(category.id), Decimal("0")),
+            months_budgeted=months_budgeted.get(str(category.id), 0),
+        )
+        for category, group in cats_result.all()
+        if str(category.id) in budgeted_ids
+    ]
+
+    return rows, out_of_budget
