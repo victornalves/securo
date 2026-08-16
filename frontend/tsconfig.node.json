@@ -14,6 +14,13 @@
     "moduleDetection": "force",
     "noEmit": true,
 
+    /* Test files live in this project and import app modules by alias, so it
+       needs the same `@/*` mapping the app project uses. */
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

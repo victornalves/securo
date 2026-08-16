@@ -15,6 +15,7 @@ import {
   buildBudgetChartData,
   chartWidth,
   OUT_OF_BUDGET_KEY,
+  OVER_BUDGET_COLOR,
   type BudgetChartDatum,
 } from '@/lib/budget-report-utils'
 import type { BudgetReportResponse } from '@/types'
