@@ -97,7 +97,18 @@ describe('buildBudgetChartData', () => {
     )
 
     expect(data[0].over).toBe(true)
-    expect(data[0].color).toBe(OVER_BUDGET_COLOR)
+  })
+
+  it('keeps the category colour when the envelope breaks', () => {
+    // Colour is identity: an overspent Groceries is still Groceries. The rose
+    // rides the part above the envelope, drawn by the bar itself.
+    const data = buildBudgetChartData(
+      response([row({ category_color: '#10B981', budgeted: 100, realized: 900 })]),
+      'Out of budget',
+    )
+
+    expect(data[0].color).toBe('#10B981')
+    expect(data[0].color).not.toBe(OVER_BUDGET_COLOR)
   })
 
   it('does not flag a category one cent under its envelope', () => {

@@ -4,7 +4,7 @@
 | ------------ | ---------- |
 | ID           | 003        |
 | Status       | Approved   |
-| Version      | 0.2.0      |
+| Version      | 0.3.0      |
 | Spec         | ./spec.md  |
 | Last updated | 2026-08-15 |
 
@@ -156,6 +156,20 @@ lib/budget-report-utils.ts                      NEW — pure helpers, unit-teste
   profiling shows the 2Y window is slow; the fix would be to extract the resolution into a pure
   function shared by both callers, not to duplicate it.
 - **Consequences:** up to ~48 lightweight queries on the widest window.
+
+### Decision: overspend is a rose cap, not a repainted bar
+
+- **Context:** the first cut repainted a whole over-budget column rose. On real data most
+  columns broke their envelope, so the chart went mostly rose and the categories' own colours —
+  the thing that made it readable at a glance — disappeared.
+- **Decision:** the realized column keeps the category colour for the part within the envelope
+  and caps the excess in rose, separated by the 2px surface gap. Colour carries identity; the
+  cap carries state, and shows *how much* over, not merely that.
+- **Alternatives considered:** a badge or marker above the bar — weaker, it says "over" without
+  saying by how much, and adds ink that isn't data. Reverting to a full repaint — rejected for
+  the reason above.
+- **Consequences:** the realized bar needs a custom shape rather than a plain `<Cell>` fill;
+  `color` in `BudgetChartDatum` is strictly identity, and `over` carries state.
 
 ### Decision: keep the tab's pure logic in `lib/budget-report-utils.ts`
 
@@ -329,5 +343,6 @@ cross-check against `/budgets` for the same month.
 
 | Version | Date       | Author       | Change                                    |
 | ------- | ---------- | ------------ | ----------------------------------------- |
+| 0.3.0   | 2026-08-15 | Victor Alves | Overspend drawn as a rose cap so category colours survive; axis-label geometry |
 | 0.2.0   | 2026-08-15 | Victor Alves | Approved; renumbered 002 → 003             |
 | 0.1.0   | 2026-08-15 | Victor Alves | Initial plan                               |

@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import {
   Bar,
   BarChart,
-  Cell,
+  CartesianGrid,
+  Rectangle,
   Tooltip,
   XAxis,
   YAxis,
@@ -18,11 +19,23 @@ import {
 } from '@/lib/budget-report-utils'
 import type { BudgetReportResponse } from '@/types'
 
-// The envelope bar is a reference, not the subject: muted so the realized bar
-// beside it carries the reading.
-const BUDGETED_COLOR = '#C7CBD4'
-const CHART_HEIGHT = 340
-const LABEL_MAX_CHARS = 14
+// The envelope is a reference, not the subject: one neutral, deliberately
+// achromatic so it never competes with a category's own colour. Held at low
+// opacity it works on both the light and the dark surface.
+const NEUTRAL = '#9CA3AF'
+const TRACK_OPACITY = 0.38
+
+// Plot height plus the band the rotated category labels need. Sizing the
+// container to the plot alone is what crops axis labels.
+const PLOT_HEIGHT = 300
+const AXIS_BAND = 84
+const CHART_HEIGHT = PLOT_HEIGHT + AXIS_BAND
+const LABEL_MAX_CHARS = 16
+const LABEL_ANGLE = -35
+// White doing the separating: the gap between the within-budget segment and
+// the overspend cap above it, and between adjacent bars.
+const SURFACE_GAP = 2
+const BAR_SIZE = 24
 
 function formatCurrency(value: number, currency: string, locale: string, compact = false) {
   return new Intl.NumberFormat(locale, {
@@ -35,6 +48,71 @@ function formatCurrency(value: number, currency: string, locale: string, compact
 
 function truncate(label: string) {
   return label.length > LABEL_MAX_CHARS ? `${label.slice(0, LABEL_MAX_CHARS - 1)}…` : label
+}
+
+/**
+ * Rotated category label. Recharts' own `angle` prop rotates around a point it
+ * derives from the tick, which drifts the text off its column; anchoring the
+ * end of the string at the tick and rotating about that same point keeps every
+ * label under the bar it names.
+ */
+function CategoryTick({ x, y, payload }: {
+  x?: number
+  y?: number
+  payload?: { value?: string }
+}) {
+  return (
+    <g transform={`translate(${x ?? 0},${(y ?? 0) + 10})`}>
+      <text
+        transform={`rotate(${LABEL_ANGLE})`}
+        textAnchor="end"
+        fontSize={11}
+        fill="var(--muted-foreground)"
+      >
+        {truncate(payload?.value ?? '')}
+      </text>
+    </g>
+  )
+}
+
+/**
+ * The realized column. Within-budget spending keeps the category's own colour;
+ * anything past the envelope is capped in rose, separated by the surface gap.
+ * Repainting the whole bar would have thrown away the identity colour to say
+ * something the cap says better — and says *how much* over, not just that.
+ */
+function RealizedBar(props: {
+  x?: number
+  y?: number
+  width?: number
+  height?: number
+  payload?: BudgetChartDatum
+}) {
+  const { x = 0, y = 0, width = 0, height = 0, payload } = props
+  if (!payload || height <= 0) return null
+
+  const isOutOfBudget = payload.key === OUT_OF_BUDGET_KEY
+  const fill = isOutOfBudget ? 'url(#budgetOutOfBudgetHatch)' : payload.color
+  const budgeted = payload.budgeted ?? 0
+
+  if (!payload.over || budgeted <= 0) {
+    return <Rectangle x={x} y={y} width={width} height={height} radius={[4, 4, 0, 0]} fill={fill} />
+  }
+
+  const excessHeight = Math.max((height * (payload.realized - budgeted)) / payload.realized, 3)
+  const withinHeight = Math.max(height - excessHeight - SURFACE_GAP, 0)
+  return (
+    <g>
+      <Rectangle
+        x={x} y={y} width={width} height={excessHeight}
+        radius={[4, 4, 0, 0]} fill={OVER_BUDGET_COLOR}
+      />
+      <Rectangle
+        x={x} y={y + excessHeight + SURFACE_GAP} width={width} height={withinHeight}
+        radius={0} fill={fill}
+      />
+    </g>
+  )
 }
 
 interface BudgetReportProps {
@@ -89,10 +167,17 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
   const balanceColor = balance >= 0 ? 'text-emerald-600' : 'text-rose-500'
 
   const metrics = [
-    { key: 'budgeted', color: BUDGETED_COLOR, value: summary?.budgeted ?? 0 },
+    { key: 'budgeted', color: NEUTRAL, value: summary?.budgeted ?? 0 },
     { key: 'realized', color: '#6366F1', value: summary?.realized ?? 0 },
-    { key: 'outOfBudget', color: '#9CA3AF', value: summary?.out_of_budget ?? 0 },
+    { key: 'outOfBudget', color: NEUTRAL, value: summary?.out_of_budget ?? 0 },
   ]
+
+  // The realized bars wear each category's own colour, so a single swatch would
+  // misrepresent them: the legend key samples the colours actually on screen.
+  const legendGradient = chartData
+    .filter((datum) => datum.key !== OUT_OF_BUDGET_KEY)
+    .slice(0, 3)
+    .map((datum) => datum.color)
 
   return (
     <div className="flex flex-col gap-5">
@@ -137,15 +222,26 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
           </p>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#6366F1' }} />
+              <div
+                className="w-4 h-2 rounded-sm"
+                style={{
+                  backgroundImage: legendGradient.length > 1
+                    ? `linear-gradient(90deg, ${legendGradient.join(', ')})`
+                    : undefined,
+                  backgroundColor: legendGradient[0] ?? '#6366F1',
+                }}
+              />
               <span className="text-[11px] text-muted-foreground">{t('reports.realized')}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: BUDGETED_COLOR }} />
+              <div
+                className="w-4 h-2 rounded-sm"
+                style={{ backgroundColor: NEUTRAL, opacity: TRACK_OPACITY }}
+              />
               <span className="text-[11px] text-muted-foreground">{t('reports.budgeted')}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#F43F5E' }} />
+              <div className="w-4 h-2 rounded-sm" style={{ backgroundColor: OVER_BUDGET_COLOR }} />
               <span className="text-[11px] text-muted-foreground">{t('reports.overBudget')}</span>
             </div>
           </div>
@@ -160,21 +256,37 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
               width={chartWidth(chartData.length, Math.max(available - 8, 0))}
               height={CHART_HEIGHT}
               data={chartData}
-              margin={{ top: 8, right: 16, left: 0, bottom: 56 }}
-              barGap={4}
+              margin={{ top: 8, right: 24, left: 0, bottom: AXIS_BAND }}
+              barGap={SURFACE_GAP}
+              barCategoryGap="22%"
             >
+              <defs>
+                {/* Texture, not hue, says "this is not a category": the column
+                    aggregates everything spent where no envelope exists. */}
+                <pattern
+                  id="budgetOutOfBudgetHatch"
+                  width={6} height={6}
+                  patternTransform="rotate(45)"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <rect width={6} height={6} fill={NEUTRAL} fillOpacity={0.28} />
+                  <line x1={0} y1={0} x2={0} y2={6} stroke={NEUTRAL} strokeWidth={2.5} />
+                </pattern>
+              </defs>
+              <CartesianGrid
+                vertical={false}
+                stroke="var(--border)"
+                strokeWidth={1}
+              />
               <XAxis
                 dataKey="label"
-                tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                 axisLine={false}
                 tickLine={false}
                 // Every column keeps its label: recharts drops them silently
                 // when it is left to pick an interval.
                 interval={0}
-                angle={-35}
-                textAnchor="end"
-                height={56}
-                tickFormatter={truncate}
+                height={AXIS_BAND}
+                tick={<CategoryTick />}
               />
               <YAxis
                 tickFormatter={(value: number) => {
@@ -209,7 +321,13 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                         boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
                       }}
                     >
-                      <p className="font-semibold mb-1">{datum.label}</p>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: datum.color }}
+                        />
+                        <p className="font-semibold">{datum.label}</p>
+                      </div>
                       <p>
                         {t('reports.realized')}: {money(datum.realized)}
                       </p>
@@ -246,16 +364,13 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                   )
                 }}
               />
-              <Bar dataKey="realized" radius={[4, 4, 0, 0]} maxBarSize={32}>
-                {chartData.map((datum) => (
-                  <Cell key={datum.key} fill={datum.color} />
-                ))}
-              </Bar>
+              <Bar dataKey="realized" maxBarSize={BAR_SIZE} shape={<RealizedBar />} />
               <Bar
                 dataKey="budgeted"
-                fill={BUDGETED_COLOR}
+                fill={NEUTRAL}
+                fillOpacity={TRACK_OPACITY}
                 radius={[4, 4, 0, 0]}
-                maxBarSize={32}
+                maxBarSize={BAR_SIZE}
               />
             </BarChart>
           )}

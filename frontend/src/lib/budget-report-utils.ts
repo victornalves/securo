@@ -15,6 +15,9 @@ export interface BudgetChartDatum {
   /** Category id, or `OUT_OF_BUDGET_KEY` for the trailing column. */
   key: string
   label: string
+  /** Always the category's own colour — identity, never state. Overspend is
+   *  drawn as a rose cap on the part above the envelope, so the category stays
+   *  recognizable instead of every broken budget looking alike. */
   color: string
   realized: number
   /** `null` on the out-of-budget column, which has no envelope to draw. */
@@ -37,7 +40,7 @@ export function buildBudgetChartData(
   const data: BudgetChartDatum[] = response.rows.map((row) => ({
     key: row.category_id,
     label: row.category_name,
-    color: row.realized > row.budgeted ? OVER_BUDGET_COLOR : row.category_color,
+    color: row.category_color,
     realized: row.realized,
     budgeted: row.budgeted,
     // Strictly greater: spending exactly the envelope is not overspending.
