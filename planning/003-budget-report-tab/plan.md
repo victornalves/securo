@@ -3,8 +3,8 @@
 | Field        | Value      |
 | ------------ | ---------- |
 | ID           | 003        |
-| Status       | Draft      |
-| Version      | 0.1.0      |
+| Status       | Approved   |
+| Version      | 0.2.0      |
 | Spec         | ./spec.md  |
 | Last updated | 2026-08-15 |
 
@@ -327,6 +327,7 @@ cross-check against `/budgets` for the same month.
 
 ## Revision History
 
-| Version | Date       | Author       | Change       |
-| ------- | ---------- | ------------ | ------------ |
-| 0.1.0   | 2026-08-15 | Victor Alves | Initial plan |
+| Version | Date       | Author       | Change                                    |
+| ------- | ---------- | ------------ | ----------------------------------------- |
+| 0.2.0   | 2026-08-15 | Victor Alves | Approved; renumbered 002 → 003             |
+| 0.1.0   | 2026-08-15 | Victor Alves | Initial plan                               |

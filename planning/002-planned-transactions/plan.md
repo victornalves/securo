@@ -3,8 +3,8 @@
 | Field        | Value        |
 | ------------ | ------------ |
 | ID           | 002          |
-| Status       | Draft        |
-| Version      | 0.1.0        |
+| Status       | Approved     |
+| Version      | 1.0.0        |
 | Spec         | ./spec.md    |
 | Author       | Victor Alves |
 | Last updated | 2026-08-15   |
@@ -313,3 +313,4 @@ Deferred implementation choices, recorded so they are not rediscovered as gaps:
 | Version | Date       | Author       | Change       |
 | ------- | ---------- | ------------ | ------------ |
 | 0.1.0   | 2026-08-15 | Victor Alves | Initial plan |
+| 1.0.0   | 2026-08-15 | Victor Alves | Approved. Broken into tasks T1–T14. |
