@@ -1,4 +1,5 @@
 import uuid
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Optional
@@ -16,6 +17,7 @@ from app.services._query_filters import (
     counts_as_user_pnl,
     owner_split_offset_by_category,
     reporting_date_col,
+    viewer_shared_spending_by_category,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.dashboard_service import _get_recurring_projections
@@ -218,6 +220,99 @@ async def delete_budget(
     return True
 
 
+async def _actual_spending_by_category(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    start: date,
+    end: date,
+    primary_currency: str,
+    accounting_mode: str,
+    include_uncategorized: bool = False,
+) -> dict[Optional[str], Decimal]:
+    """Realized spending per category over ``[start, end)``, in primary currency.
+
+    The single definition of "actual" behind /budgets, the dashboard budget
+    metric and the budget report — the four steps below, and the order they
+    run in, are what makes those screens agree on the same number.
+
+    Keys are ``str(category_id)``. With ``include_uncategorized``, spending
+    with no category is kept under the ``None`` key instead of being dropped.
+    """
+    report_date = reporting_date_col(accounting_mode)
+    use_effective_date = accounting_mode == "accrual"
+
+    # 1. Debits in the window (transfer pairs and settlement credits excluded).
+    #    Use amount_primary for multi-currency support.
+    conditions = [
+        Transaction.workspace_id == workspace_id,
+        Transaction.type == "debit",
+        report_date >= start,
+        report_date < end,
+        counts_as_user_pnl(),
+    ]
+    if not include_uncategorized:
+        conditions.append(Transaction.category_id.isnot(None))
+
+    spending_result = await session.execute(
+        select(
+            Transaction.category_id,
+            func.sum(_primary_amount_expr()),
+        )
+        .where(*conditions)
+        .group_by(Transaction.category_id)
+    )
+    spending_map: dict[Optional[str], Decimal] = {}
+    for row in spending_result.all():
+        spending_map[str(row[0]) if row[0] is not None else None] = abs(row[1] or Decimal("0"))
+
+    # 2. Subtract non-owner shares of own splits — only the user's share counts.
+    own_offset = await owner_split_offset_by_category(
+        session, user_id, start, end,
+        use_effective_date=use_effective_date,
+        primary_currency=primary_currency,
+        workspace_id=workspace_id,
+    )
+    for cat_uuid, total in own_offset.items():
+        if cat_uuid is None and not include_uncategorized:
+            continue
+        cat_id = str(cat_uuid) if cat_uuid is not None else None
+        if cat_id in spending_map:
+            spending_map[cat_id] -= Decimal(str(total))
+            if spending_map[cat_id] <= 0:
+                spending_map.pop(cat_id)
+
+    # 3. Layer in the user's share from group splits — concert tickets
+    #    paid by a friend are still the user's expense in the budget
+    #    picture for the matching category. FX-convert per currency to
+    #    match the rest of the budget (everything else is in primary).
+    shared_by_cat = await viewer_shared_spending_by_category(
+        session, user_id, start, end,
+        use_effective_date=use_effective_date,
+        primary_currency=primary_currency,
+    )
+    for cat_uuid, total in shared_by_cat.items():
+        if cat_uuid is None and not include_uncategorized:
+            continue
+        cat_id = str(cat_uuid) if cat_uuid is not None else None
+        spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
+
+    # 4. Add projected recurring transactions (converted to primary currency).
+    projections = await _get_recurring_projections(session, workspace_id, start, end)
+    for proj in projections:
+        if proj["type"] != "debit":
+            continue
+        if not proj["category_id"] and not include_uncategorized:
+            continue
+        cat_id = str(proj["category_id"]) if proj["category_id"] else None
+        converted, _ = await convert(
+            session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+        )
+        spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + converted
+
+    return spending_map
+
+
 async def get_budget_vs_actual(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -258,132 +353,17 @@ async def get_budget_vs_actual(
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
     accounting_mode = await get_credit_card_accounting_mode(session)
-    report_date = reporting_date_col(accounting_mode)
 
-    # Get actual spending by category for this month (exclude transfer pairs)
-    # Use amount_primary for multi-currency support
-    spending_result = await session.execute(
-        select(
-            Transaction.category_id,
-            func.sum(_primary_amount_expr()),
-        )
-        .where(
-            Transaction.workspace_id == workspace_id,
-            Transaction.type == "debit",
-            report_date >= month_start,
-            report_date < month_end,
-            Transaction.category_id.isnot(None),
-            counts_as_user_pnl(),
-        )
-        .group_by(Transaction.category_id)
-    )
-    spending_map: dict[str, Decimal] = {}
-    for row in spending_result.all():
-        spending_map[str(row[0])] = abs(row[1] or Decimal("0"))
-
-    # Subtract non-owner shares of own splits — only the user's share counts.
-    own_offset = await owner_split_offset_by_category(
-        session, user_id, month_start, month_end,
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
-        workspace_id=workspace_id,
-    )
-    for cat_uuid, total in own_offset.items():
-        if cat_uuid is None:
-            continue
-        cat_id = str(cat_uuid)
-        if cat_id in spending_map:
-            spending_map[cat_id] -= Decimal(str(total))
-            if spending_map[cat_id] <= 0:
-                spending_map.pop(cat_id)
-
-    # Layer in the user's share from group splits — concert tickets
-    # paid by a friend are still the user's expense in the budget
-    # picture for the matching category. FX-convert per currency to
-    # match the rest of the budget (everything else is in primary).
-    from app.services._query_filters import viewer_shared_spending_by_category
-
-    shared_by_cat = await viewer_shared_spending_by_category(
-        session, user_id, month_start, month_end,
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
-    )
-    for cat_uuid, total in shared_by_cat.items():
-        if cat_uuid is None:
-            continue
-        cat_id = str(cat_uuid)
-        spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
-
-    # Add projected recurring transactions for this month (converted to primary currency)
-    projections = await _get_recurring_projections(session, workspace_id, month_start, month_end)
-    for proj in projections:
-        if proj["type"] != "debit" or not proj["category_id"]:
-            continue
-        cat_id = str(proj["category_id"])
-        converted, _ = await convert(
-            session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
-        )
-        spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + converted
-
-    # Get previous month spending by category (exclude transfer pairs)
-    # Use amount_primary for multi-currency support
-    prev_spending_result = await session.execute(
-        select(
-            Transaction.category_id,
-            func.sum(_primary_amount_expr()),
-        )
-        .where(
-            Transaction.workspace_id == workspace_id,
-            Transaction.type == "debit",
-            report_date >= prev_month_start,
-            report_date < prev_month_end,
-            Transaction.category_id.isnot(None),
-            counts_as_user_pnl(),
-        )
-        .group_by(Transaction.category_id)
-    )
-    prev_spending_map: dict[str, Decimal] = {}
-    for row in prev_spending_result.all():
-        prev_spending_map[str(row[0])] = abs(row[1] or Decimal("0"))
-
-    prev_own_offset = await owner_split_offset_by_category(
-        session, user_id, prev_month_start, prev_month_end,
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
-        workspace_id=workspace_id,
-    )
-    for cat_uuid, total in prev_own_offset.items():
-        if cat_uuid is None:
-            continue
-        cat_id = str(cat_uuid)
-        if cat_id in prev_spending_map:
-            prev_spending_map[cat_id] -= Decimal(str(total))
-            if prev_spending_map[cat_id] <= 0:
-                prev_spending_map.pop(cat_id)
-
-    # Same shared-share layer for the previous month so the trend
+    # Actual spending for this month, and for the previous one so the trend
     # comparison is apples-to-apples.
-    prev_shared_by_cat = await viewer_shared_spending_by_category(
-        session, user_id, prev_month_start, prev_month_end,
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
+    spending_map = await _actual_spending_by_category(
+        session, workspace_id, user_id, month_start, month_end,
+        primary_currency, accounting_mode,
     )
-    for cat_uuid, total in prev_shared_by_cat.items():
-        if cat_uuid is None:
-            continue
-        cat_id = str(cat_uuid)
-        prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
-
-    # Add projected recurring transactions for previous month (converted to primary currency)
-    prev_projections = await _get_recurring_projections(session, workspace_id, prev_month_start, prev_month_end)
-    for proj in prev_projections:
-        if proj["type"] != "debit" or not proj["category_id"]:
-            continue
-        cat_id = str(proj["category_id"])
-        converted, _ = await convert(
-            session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
-        )
-        prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + converted
+    prev_spending_map = await _actual_spending_by_category(
+        session, workspace_id, user_id, prev_month_start, prev_month_end,
+        primary_currency, accounting_mode,
+    )
 
     comparisons = []
     for category, group in all_categories:
@@ -417,3 +397,95 @@ async def get_budget_vs_actual(
         ))
 
     return sorted(comparisons, key=lambda x: float(x.actual_amount), reverse=True)
+
+
+@dataclass
+class CategoryWindowTotals:
+    """One budgeted category's envelope and spending over a multi-month window."""
+
+    category_id: uuid.UUID
+    category_name: str
+    category_icon: str
+    category_color: str
+    group_name: Optional[str]
+    budgeted: Decimal
+    realized: Decimal
+    months_budgeted: int
+
+
+async def get_budget_window_totals(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    months: list[date],
+    start: date,
+    end: date,
+) -> tuple[list[CategoryWindowTotals], Decimal]:
+    """Envelopes and spending over ``[start, end)``, split into budgeted
+    categories and one out-of-budget total.
+
+    ``months`` is the list of first-of-month dates the window covers, passed in
+    rather than derived here: window semantics belong to the caller, and the
+    list must follow the resolved start date rather than a month count.
+
+    A category earns a row when its envelopes over the window sum to more than
+    zero; a month with no envelope simply contributes nothing. Everything else
+    — never budgeted, budgeted only at zero, and uncategorized spending — is
+    summed into the second return value.
+    """
+    user = await session.get(User, user_id)
+    primary_currency = user.primary_currency if user else get_settings().default_currency
+    accounting_mode = await get_credit_card_accounting_mode(session)
+
+    # Envelopes, month by month. Resolution (override beats recurring default)
+    # stays in _build_budget_map — reimplementing it here to save queries is
+    # how this report would start disagreeing with /budgets.
+    budgeted: dict[str, Decimal] = {}
+    months_budgeted: dict[str, int] = {}
+    for month_start in months:
+        for cat_id, (amount, _is_recurring) in (
+            await _build_budget_map(session, workspace_id, month_start)
+        ).items():
+            budgeted[cat_id] = budgeted.get(cat_id, Decimal("0")) + amount
+            if amount > 0:
+                months_budgeted[cat_id] = months_budgeted.get(cat_id, 0) + 1
+
+    # Spending in one pass over the whole window, not month by month.
+    spending_map = await _actual_spending_by_category(
+        session, workspace_id, user_id, start, end,
+        primary_currency, accounting_mode,
+        include_uncategorized=True,
+    )
+
+    budgeted_ids = {cat_id for cat_id, amount in budgeted.items() if amount > 0}
+
+    out_of_budget = Decimal("0")
+    for cat_id, amount in spending_map.items():
+        if cat_id not in budgeted_ids:
+            out_of_budget += amount
+
+    if not budgeted_ids:
+        return [], out_of_budget
+
+    cats_result = await session.execute(
+        select(Category, CategoryGroup)
+        .outerjoin(CategoryGroup, Category.group_id == CategoryGroup.id)
+        .where(Category.workspace_id == workspace_id)
+    )
+
+    rows = [
+        CategoryWindowTotals(
+            category_id=category.id,
+            category_name=category.name,
+            category_icon=category.icon,
+            category_color=category.color,
+            group_name=group.name if group else None,
+            budgeted=budgeted[str(category.id)],
+            realized=spending_map.get(str(category.id), Decimal("0")),
+            months_budgeted=months_budgeted.get(str(category.id), 0),
+        )
+        for category, group in cats_result.all()
+        if str(category.id) in budgeted_ids
+    ]
+
+    return rows, out_of_budget

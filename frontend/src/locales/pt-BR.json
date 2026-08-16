@@ -1169,7 +1169,19 @@
     "amount": "Valor",
     "investments": "Investimentos",
     "moneyMap": "Mapa do Dinheiro",
-    "range30d": "30D"
+    "range30d": "30D",
+    "budget": "Orçamento",
+    "budgeted": "Orçado",
+    "realized": "Realizado",
+    "outOfBudget": "Fora do orçamento",
+    "budgetBalance": "Saldo de Orçamento",
+    "overBudget": "Acima do orçamento",
+    "byCategory": "Por categoria",
+    "difference": "Diferença",
+    "percentUsed": "{{percent}}% do orçamento usado",
+    "budgetCoverage": "Orçado em {{months}} de {{total}} meses",
+    "noBudgets": "Nenhum orçamento definido para este período",
+    "budgetCollectionNotice": "Orçamentos valem para o workspace inteiro e não aceitam filtro por conta. Limpe a Coleção ativa para ver esta aba."
   },
   "payees": {
     "addFavorite": "Adicionar aos favoritos",

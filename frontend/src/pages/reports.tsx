@@ -27,10 +27,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { PageHeader } from '@/components/page-header'
 import { CashflowSankey } from '@/components/reports/CashflowSankey'
+import { BudgetReport } from '@/components/reports/BudgetReport'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
-import type { ReportResponse, CategoryTrendItem } from '@/types'
+import type { BudgetReportResponse, ReportResponse, CategoryTrendItem } from '@/types'
 
 // A small qualitative palette of well-separated hues for the composition
 // detail ring. Capped to a handful of slices, distinct colours make each
@@ -135,6 +136,7 @@ const REPORT_TABS: ReportTab[] = [
   { key: 'income_expenses', labelKey: 'reports.incomeExpenses', enabled: true },
   { key: 'cash_flow', labelKey: 'reports.cashFlow', enabled: true },
   { key: 'money_map', labelKey: 'reports.moneyMap', enabled: true },
+  { key: 'budget', labelKey: 'reports.budget', enabled: true },
 ]
 
 const MONTH_REGEX = /^\d{4}-\d{2}$/
@@ -177,6 +179,9 @@ export default function ReportsPage() {
   // entry on top of it — otherwise every back/forward step re-pushes the
   // entry it just landed on, corrupting the history stack.
   const syncingFromUrlRef = useRef(false)
+  // Set when the user works the Range/Month toggle, so the Budget tab's
+  // month-mode default never overrides a choice they made themselves.
+  const modePinnedByUser = useRef(false)
 
   const { data: bounds } = useQuery({
     queryKey: ['reports', 'bounds'],
@@ -260,6 +265,9 @@ export default function ReportsPage() {
   // The Money Map (Sankey) tab is driven by the same income/expenses
   // composition, aggregated over the selected historical range.
   const isMoneyMap = activeTab === 'money_map'
+  // Budget puts categories on the X axis instead of time, and reads from its
+  // own endpoint — it opts out of the interval selector and the shared hero.
+  const isBudget = activeTab === 'budget'
   const rangeOptions = isCashFlow
     ? FORWARD_RANGE_OPTIONS
     : isMoneyMap
@@ -276,6 +284,13 @@ export default function ReportsPage() {
     setCompositionView(key === 'net_worth' ? 'netWorth' : 'net')
     setSparklinePage(0)
     setSelectedDate(null)
+    // Budgets are monthly, so the tab opens in month mode — unless the user
+    // has already picked a mode themselves. Testing the URL alone wouldn't do:
+    // the state->URL effect writes `?mode=` on our behalf, so this tab's own
+    // default would read back as a user choice on the next render.
+    if (key === 'budget' && !modePinnedByUser.current && !searchParams.get('mode')) {
+      setMode('month')
+    }
     // Clamp months/interval to options supported by the new tab
     const nextRanges = key === 'cash_flow'
       ? FORWARD_RANGE_OPTIONS
@@ -310,7 +325,19 @@ export default function ReportsPage() {
         : activeTab === 'income_expenses' || isMoneyMap
           ? reports.incomeExpenses(months, interval, acctIds, period, days, anchorMonth)
           : reports.netWorth(months, interval, acctIds, walletIds, period, anchorMonth),
-    enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth'),
+    enabled: currentTab.enabled && !isBudget && !(noAccounts && activeTab !== 'net_worth'),
+  })
+
+  // A Collection narrows the page to some accounts, but /budgets data is
+  // workspace-wide and takes no account filter — weighing a filtered actual
+  // against a whole-workspace envelope would be a false comparison. Same call
+  // the dashboard's budget metric makes.
+  const budgetUnavailable = activeAccountIds !== null
+
+  const { data: budgetData, isLoading: budgetLoading } = useQuery<BudgetReportResponse>({
+    queryKey: ['reports', 'budget', mode, anchorMonth ?? rangeKey, months, period ?? null],
+    queryFn: () => reports.budget(months, period, anchorMonth),
+    enabled: isBudget && !budgetUnavailable,
   })
 
   const summary = data?.summary
@@ -612,7 +639,7 @@ export default function ReportsPage() {
               {(['range', 'month'] as const).map((m) => (
                 <button
                   key={m}
-                  onClick={() => { setMode(m); setSelectedDate(null) }}
+                  onClick={() => { modePinnedByUser.current = true; setMode(m); setSelectedDate(null) }}
                   className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
                     mode === m
                       ? 'bg-primary text-primary-foreground'
@@ -648,7 +675,7 @@ export default function ReportsPage() {
                 ))}
               </div>
             )}
-            <div className={`flex items-center rounded-lg border border-border bg-card overflow-hidden ${isMoneyMap || mode === 'month' ? 'hidden' : ''}`}>
+            <div className={`flex items-center rounded-lg border border-border bg-card overflow-hidden ${isMoneyMap || isBudget || mode === 'month' ? 'hidden' : ''}`}>
               {intervalOptions.map((opt) => (
                 <button
                   key={opt.key}
@@ -695,7 +722,26 @@ export default function ReportsPage() {
         ))}
       </div>
 
+      {/* Budget tab — categories on the X axis, its own summary, its own endpoint. */}
+      {isBudget && (
+        budgetUnavailable ? (
+          <div className="bg-card rounded-xl border border-border shadow-sm px-5 py-10">
+            <p className="text-muted-foreground text-sm text-center max-w-xl mx-auto">
+              {t('reports.budgetCollectionNotice')}
+            </p>
+          </div>
+        ) : (
+          <BudgetReport
+            data={budgetData}
+            currency={userCurrency}
+            locale={locale}
+            isLoading={budgetLoading}
+          />
+        )
+      )}
+
       {/* Hero Card */}
+      {!isBudget && (
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
         <div className="px-5 py-4">
           {isLoading ? (
@@ -762,6 +808,7 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+      )}
 
       {/* Flow (Sankey) */}
       {isMoneyMap && (
@@ -799,7 +846,7 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {!isMoneyMap && (
+      {!isMoneyMap && !isBudget && (
       <>
       {/* Main Trend Chart */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5">

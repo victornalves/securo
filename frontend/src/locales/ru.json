@@ -1169,7 +1169,19 @@
     "amount": "Сумма",
     "investments": "Инвестиции",
     "moneyMap": "Money Map",
-    "range30d": "30D"
+    "range30d": "30D",
+    "budget": "Бюджет",
+    "budgeted": "Запланировано",
+    "realized": "Факт",
+    "outOfBudget": "Вне бюджета",
+    "budgetBalance": "Остаток бюджета",
+    "overBudget": "Превышение бюджета",
+    "byCategory": "По категориям",
+    "difference": "Разница",
+    "percentUsed": "Использовано {{percent}}% бюджета",
+    "budgetCoverage": "Запланировано в {{months}} из {{total}} месяцев",
+    "noBudgets": "На этот период бюджеты не заданы",
+    "budgetCollectionNotice": "Бюджеты действуют на всё рабочее пространство и не фильтруются по счетам. Сбросьте активную Коллекцию, чтобы увидеть эту вкладку."
   },
   "payees": {
     "addFavorite": "Добавить в избранное",

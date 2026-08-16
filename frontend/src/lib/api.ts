@@ -45,6 +45,7 @@ import type {
   BalanceHistory,
   PaginatedTransactions,
   ReportResponse,
+  BudgetReportResponse,
   Group,
   GroupKind,
   GroupMember,
@@ -1126,6 +1127,12 @@ export const reports = {
   cashFlow: async (months = 6, interval = 'daily', baseline = false, accountIds?: string[], anchorMonth?: string): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, anchor_month: anchorMonth, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    return data
+  },
+  // Budgeted vs realized per category. No account filter: budgets are
+  // workspace-wide, so the tab hides itself under a Collection instead.
+  budget: async (months = 12, period?: 'ytd', anchorMonth?: string): Promise<BudgetReportResponse> => {
+    const { data } = await api.get('/reports/budget', { params: { months, period, anchor_month: anchorMonth } })
     return data
   },
   // Earliest navigable month for the month-mode stepper's lower bound.

@@ -5,7 +5,7 @@
 | ID           | 003          |
 | Type         | Feature      |
 | Status       | Approved     |
-| Version      | 0.3.0        |
+| Version      | 0.4.0        |
 | Author       | Victor Alves |
 | Last updated | 2026-08-15   |
 | Jira         | —            |
@@ -169,9 +169,9 @@ not need to be invented.
 ## Constraints & Dependencies
 
 - **Branch base.** This work depends on `c85196f` (month mode, `anchor_month`,
-  `/reports/bounds`, `MonthStepper` wiring), which is on `main` via PR #2. The current
-  working branch `feat/dashboard-budget-balance-kpi` predates that merge, so this must branch
-  from `main`, not from the current HEAD.
+  `/reports/bounds`, `MonthStepper` wiring) and on the dashboard budget work `385d967` /
+  `33c797b` whose precedents this spec follows. All three are on `main` as of 2026-08-15, so
+  this branches from `main` with no other prerequisite.
 - **Reuse, don't re-derive.** The consistency criteria above are only achievable by reusing
   the existing resolution rules: `budget_service._build_budget_map` for envelopes, and the
   actual-spending logic in `budget_service.get_budget_vs_actual` (`counts_as_user_pnl`,
@@ -215,6 +215,7 @@ None open. New unknowns found during planning go here.
 
 | Version | Date       | Author       | Change                                                                                             |
 | ------- | ---------- | ------------ | -------------------------------------------------------------------------------------------------- |
+| 0.4.0   | 2026-08-15 | Victor Alves | Renumbered 002 → 003; branch base is now plain `main`, which carries all prerequisites      |
 | 0.3.0   | 2026-08-15 | Victor Alves | Approved. Closed the three remaining questions: uncategorized folded in, no pacing, tab goes last     |
 | 0.2.0   | 2026-08-15 | Victor Alves | Resolve multi-month aggregation: a month with no envelope counts as 0; add coverage indicator        |
 | 0.1.0   | 2026-08-15 | Victor Alves | Initial draft                                                                                        |

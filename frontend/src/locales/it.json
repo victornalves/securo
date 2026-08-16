@@ -1169,7 +1169,19 @@
     "amount": "Importo",
     "investments": "Investimenti",
     "moneyMap": "Mappa del Denaro",
-    "range30d": "30D"
+    "range30d": "30D",
+    "budget": "Budget",
+    "budgeted": "Preventivato",
+    "realized": "Effettivo",
+    "outOfBudget": "Fuori budget",
+    "budgetBalance": "Saldo budget",
+    "overBudget": "Oltre budget",
+    "byCategory": "Per categoria",
+    "difference": "Differenza",
+    "percentUsed": "{{percent}}% del budget utilizzato",
+    "budgetCoverage": "Preventivato in {{months}} mesi su {{total}}",
+    "noBudgets": "Nessun budget impostato per questo periodo",
+    "budgetCollectionNotice": "I budget riguardano l'intero workspace e non accettano filtri per conto. Rimuovi la Collezione attiva per vedere questa scheda."
   },
   "payees": {
     "addFavorite": "Aggiungi ai preferiti",

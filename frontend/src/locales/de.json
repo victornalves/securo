@@ -1169,7 +1169,19 @@
     "amount": "Betrag",
     "investments": "Investitionen",
     "moneyMap": "Geld-Karte",
-    "range30d": "30T"
+    "range30d": "30T",
+    "budget": "Budget",
+    "budgeted": "Budgetiert",
+    "realized": "Ist",
+    "outOfBudget": "Außerhalb des Budgets",
+    "budgetBalance": "Budget-Saldo",
+    "overBudget": "Über Budget",
+    "byCategory": "Nach Kategorie",
+    "difference": "Differenz",
+    "percentUsed": "{{percent}}% des Budgets verbraucht",
+    "budgetCoverage": "In {{months}} von {{total}} Monaten budgetiert",
+    "noBudgets": "Für diesen Zeitraum ist kein Budget festgelegt",
+    "budgetCollectionNotice": "Budgets gelten für den gesamten Workspace und kennen keinen Kontofilter. Hebe die aktive Sammlung auf, um diesen Tab zu sehen."
   },
   "payees": {
     "addFavorite": "Zu Favoriten hinzufügen",

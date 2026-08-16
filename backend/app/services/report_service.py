@@ -24,6 +24,10 @@ from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.account_service import get_account_name
 from app.services.fx_rate_service import convert
 from app.schemas.report import (
+    BudgetReportMeta,
+    BudgetReportResponse,
+    BudgetReportRow,
+    BudgetReportSummary,
     CategoryTrendItem,
     ReportBreakdown,
     ReportCompositionItem,
@@ -32,6 +36,7 @@ from app.schemas.report import (
     ReportResponse,
     ReportSummary,
 )
+from app.services import budget_service
 from app.services.dashboard_service import _get_open_accounts, _account_balance_at
 
 CATEGORY_TREND_TOP_N = 11
@@ -1599,4 +1604,83 @@ async def get_cash_flow_report(
     return ReportResponse(
         summary=summary, trend=trend, meta=meta,
         composition=composition, category_trend=[],
+    )
+
+
+async def get_budget_report(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    months: int,
+    primary_currency: str,
+    period: str | None = None,
+    anchor_month: str | None = None,
+) -> BudgetReportResponse:
+    """Budgeted vs realized per category over the selected window.
+
+    `anchor_month` (`YYYY-MM`), when set, scopes the report to that exact
+    calendar month; otherwise the same rolling window the other report tabs
+    use applies. The numbers themselves come from `budget_service`, so they
+    stay identical to what /budgets shows for the same period.
+    """
+    today = date.today()
+    if anchor_month is not None:
+        start, end_inclusive = _month_bounds(anchor_month)
+    else:
+        start = _report_start_date(today, months, period)
+        end_inclusive = today
+
+    # The month list follows the *resolved* start date, never the `months`
+    # count: `_report_start_date` approximates a month as 30 days before
+    # snapping to day 1, so a 6M request can legitimately span seven calendar
+    # months. Envelopes have to cover exactly the span spending covers, or the
+    # two bars stop being comparable.
+    months_list: list[date] = []
+    cursor = start.replace(day=1)
+    last_month = end_inclusive.replace(day=1)
+    while cursor <= last_month:
+        months_list.append(cursor)
+        cursor = _add_months(cursor, 1)
+
+    totals, out_of_budget = await budget_service.get_budget_window_totals(
+        session, workspace_id, user_id, months_list,
+        start, end_inclusive + timedelta(days=1),
+    )
+
+    rows: list[BudgetReportRow] = []
+    for item in sorted(totals, key=lambda t: float(t.realized), reverse=True):
+        budgeted = float(item.budgeted)
+        realized = float(item.realized)
+        rows.append(BudgetReportRow(
+            category_id=item.category_id,
+            category_name=item.category_name,
+            category_icon=item.category_icon,
+            category_color=item.category_color,
+            group_name=item.group_name,
+            budgeted=budgeted,
+            realized=realized,
+            difference=budgeted - realized,
+            percentage_used=round(realized / budgeted * 100, 1) if budgeted > 0 else None,
+            months_in_window=len(months_list),
+            months_budgeted=item.months_budgeted,
+        ))
+
+    total_budgeted = sum(r.budgeted for r in rows)
+    total_realized = sum(r.realized for r in rows)
+
+    return BudgetReportResponse(
+        rows=rows,
+        summary=BudgetReportSummary(
+            budgeted=total_budgeted,
+            realized=total_realized,
+            balance=total_budgeted - total_realized,
+            out_of_budget=float(out_of_budget),
+        ),
+        meta=BudgetReportMeta(
+            currency=primary_currency,
+            start_date=start.isoformat(),
+            end_date=end_inclusive.isoformat(),
+            months_in_window=len(months_list),
+            anchor_month=anchor_month,
+        ),
     )
