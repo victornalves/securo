@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -1169,3 +1169,177 @@ async def test_bulk_remove_tags_clears_only_exact_matches(
     await session.refresh(t2)
     assert t1.notes == "#keep"
     assert t2.notes == "#test2 untouched"
+
+
+# ---------------------------------------------------------------------------
+# planned status (planning/002-planned-transactions, T2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_transaction_defaults_to_posted(
+    session: AsyncSession, test_user, test_workspace, txn_account
+):
+    """Omitting `status` keeps the pre-existing behavior."""
+    data = TransactionCreate(
+        description="Coffee",
+        amount=Decimal("8.00"),
+        date=date.today(),
+        type="debit",
+        account_id=txn_account.id,
+    )
+    txn = await create_transaction(session, test_workspace.id, test_user.id, data)
+    assert txn.status == "posted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("offset_days", [-30, 0, 30])
+async def test_create_planned_transaction_any_date(
+    session: AsyncSession, test_user, test_workspace, txn_account, offset_days
+):
+    """Planned is settable regardless of the date — the backend never infers
+    it. A bill whose real amount hasn't arrived stays planned past its date."""
+    data = TransactionCreate(
+        description="Electricity",
+        amount=Decimal("180.00"),
+        date=date.today() + timedelta(days=offset_days),
+        type="debit",
+        account_id=txn_account.id,
+        status="planned",
+    )
+    txn = await create_transaction(session, test_workspace.id, test_user.id, data)
+    assert txn.status == "planned"
+
+
+@pytest.mark.asyncio
+async def test_create_planned_transaction_on_credit_card(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A planned credit-card row still gets its bill cycle assigned."""
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Card",
+        type="credit_card",
+        balance=Decimal("0"),
+        currency="BRL",
+        statement_close_day=20,
+        payment_due_day=28,
+    )
+    session.add(account)
+    await session.commit()
+
+    data = TransactionCreate(
+        description="Notebook (3/10)",
+        amount=Decimal("450.00"),
+        date=date(2025, 3, 10),
+        type="debit",
+        account_id=account.id,
+        status="planned",
+    )
+    txn = await create_transaction(session, test_workspace.id, test_user.id, data)
+
+    assert txn.status == "planned"
+    # Closes on the 20th, due on the 28th — a 10 March purchase lands there.
+    assert txn.effective_date == date(2025, 3, 28)
+
+
+@pytest.mark.asyncio
+async def test_promote_planned_preserves_context(
+    session: AsyncSession, test_user, test_workspace, test_categories, txn_account
+):
+    """Promotion is an ordinary update — nothing the user entered is lost."""
+    data = TransactionCreate(
+        description="Rent",
+        amount=Decimal("2500.00"),
+        date=date.today() + timedelta(days=5),
+        type="debit",
+        account_id=txn_account.id,
+        category_id=test_categories[0].id,
+        notes="#housing monthly",
+        status="planned",
+    )
+    txn = await create_transaction(session, test_workspace.id, test_user.id, data)
+    txn.installment_number = 3
+    txn.total_installments = 10
+    await session.commit()
+
+    original_id = txn.id
+
+    updated = await update_transaction(
+        session, txn.id, test_workspace.id, test_user.id,
+        TransactionUpdate(status="posted"),
+    )
+
+    assert updated.id == original_id
+    assert updated.status == "posted"
+    assert updated.category_id == test_categories[0].id
+    assert updated.notes == "#housing monthly"
+    assert updated.description == "Rent"
+    assert updated.amount == Decimal("2500.00")
+    assert updated.installment_number == 3
+    assert updated.total_installments == 10
+
+
+@pytest.mark.asyncio
+async def test_demote_posted_back_to_planned(
+    session: AsyncSession, test_user, test_workspace, txn_account
+):
+    """The state is reversible — a mistaken promotion can be undone."""
+    data = TransactionCreate(
+        description="Insurance",
+        amount=Decimal("300.00"),
+        date=date.today(),
+        type="debit",
+        account_id=txn_account.id,
+    )
+    txn = await create_transaction(session, test_workspace.id, test_user.id, data)
+    assert txn.status == "posted"
+
+    updated = await update_transaction(
+        session, txn.id, test_workspace.id, test_user.id,
+        TransactionUpdate(status="planned"),
+    )
+    assert updated.status == "planned"
+
+
+@pytest.mark.asyncio
+async def test_update_without_status_leaves_it_alone(
+    session: AsyncSession, test_user, test_workspace, txn_account
+):
+    """`exclude_unset` must not reset status on an unrelated edit."""
+    data = TransactionCreate(
+        description="Groceries",
+        amount=Decimal("120.00"),
+        date=date.today() + timedelta(days=2),
+        type="debit",
+        account_id=txn_account.id,
+        status="planned",
+    )
+    txn = await create_transaction(session, test_workspace.id, test_user.id, data)
+
+    updated = await update_transaction(
+        session, txn.id, test_workspace.id, test_user.id,
+        TransactionUpdate(description="Groceries (Pão de Açúcar)"),
+    )
+    assert updated.status == "planned"
+    assert updated.description == "Groceries (Pão de Açúcar)"
+
+
+def test_client_cannot_set_pending_status():
+    """`pending` is provider-owned — a client must not be able to claim it."""
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError):
+        TransactionCreate(
+            description="X",
+            amount=Decimal("1.00"),
+            date=date.today(),
+            type="debit",
+            account_id=uuid.uuid4(),
+            status="pending",
+        )
+
+    with pytest.raises(pydantic.ValidationError):
+        TransactionUpdate(status="pending")

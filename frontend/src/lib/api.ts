@@ -430,6 +430,7 @@ export const transactions = {
     payee_id?: string
     uncategorized?: boolean
     type?: string
+    status?: string | string[]
     from?: string
     to?: string
     bill_id?: string
@@ -451,6 +452,10 @@ export const transactions = {
       params,
       paramsSerializer: { indexes: null },
     })
+    return data
+  },
+  overduePlanned: async (): Promise<{ count: number; items: Transaction[] }> => {
+    const { data } = await api.get('/transactions/planned/overdue')
     return data
   },
   get: async (id: string): Promise<Transaction> => {

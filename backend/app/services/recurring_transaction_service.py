@@ -231,6 +231,14 @@ async def generate_pending(
             if existing_real is not None:
                 existing_real.recurring_transaction_id = recurring.id
             else:
+                # Occurrences past today haven't happened yet. Writing them
+                # as `posted` — the column default — booked future months as
+                # already spent (planning/002-planned-transactions, D4).
+                # Occurrences on or before today are genuinely due and keep
+                # the previous behaviour.
+                placeholder_status = (
+                    "planned" if recurring.next_occurrence > date.today() else "posted"
+                )
                 transaction = Transaction(
                     user_id=user_id,
                     account_id=recurring.account_id,
@@ -241,6 +249,7 @@ async def generate_pending(
                     date=recurring.next_occurrence,
                     type=recurring.type,
                     source="recurring",
+                    status=placeholder_status,
                     recurring_transaction_id=recurring.id,
                 )
                 account = await session.get(Account, recurring.account_id)

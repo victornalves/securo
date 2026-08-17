@@ -26,6 +26,7 @@ import { reports } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { PageHeader } from '@/components/page-header'
+import { IncludePlannedToggle } from '@/components/include-planned-toggle'
 import { CashflowSankey } from '@/components/reports/CashflowSankey'
 import { BudgetReport } from '@/components/reports/BudgetReport'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -598,7 +599,8 @@ export default function ReportsPage() {
         section={t('reports.section')}
         title={t(currentTab.labelKey)}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <IncludePlannedToggle />
             {isCashFlow && mode === 'range' && (
               <div
                 className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${

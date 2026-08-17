@@ -40,7 +40,32 @@ def reporting_date_col(accounting_mode: str):
     return func.coalesce(Transaction.effective_bill_date, base)
 
 
-def counts_as_pnl():
+def is_realized():
+    """Status-only filter: the row describes something that actually happened.
+
+    Deliberately *not* built on `counts_as_pnl` — balance queries need this
+    without the P&L exclusions. A transfer between two accounts is dropped
+    from income/expense totals (both legs cancel out) but genuinely moves
+    money out of the source account, so a balance must keep it.
+
+    Never parameterized by the user's "include planned" preference: an
+    account balance answers "what does the bank hold?", not "what have I
+    committed to?".
+    """
+    return Transaction.status != "planned"
+
+
+def counts_as_realized():
+    """`counts_as_pnl` restricted to what actually happened.
+
+    For P&L-shaped figures that must stay realized-only regardless of the
+    preference — forecast inputs, chiefly, where a planned row must not feed
+    the historical mean that would then forecast it.
+    """
+    return and_(counts_as_pnl(), is_realized())
+
+
+def counts_as_pnl(include_planned: bool = False):
     """SQL filter: True when a transaction should contribute to income/expense totals.
 
     Excludes:
@@ -49,7 +74,13 @@ def counts_as_pnl():
         movements like investment applications where the counterpart is
         an Asset/Holding, not another Account),
       - transactions flagged `is_ignored=True` (user-marked as not to be reported),
-      - transactions in categories flagged `is_ignored=True` (user-marked as not to be reported).
+      - transactions in categories flagged `is_ignored=True` (user-marked as not to be reported),
+      - `status='planned'` rows, unless `include_planned` is set.
+
+    `include_planned` carries the user's preference down from the API
+    boundary. It defaults to False so a call site that hasn't been updated
+    under-reports rather than counting a future commitment as already spent
+    — the safe direction to fail in.
 
     Does NOT exclude `source='opening_balance'` — callers that already
     filter those keep doing so; this helper only handles the transfer-like
@@ -58,6 +89,7 @@ def counts_as_pnl():
     return and_(
         Transaction.transfer_pair_id.is_(None),
         Transaction.is_ignored.is_(False),
+        *([] if include_planned else [Transaction.status != "planned"]),
         # Settlement *debits* are repayments of debts that were already
         # booked as an expense via the share. Counting them would
         # double-count. Settlement *credits*, however, represent the
@@ -79,7 +111,7 @@ def counts_as_pnl():
     )
 
 
-def counts_as_user_pnl():
+def counts_as_user_pnl(include_planned: bool = False):
     """SQL filter for *user-level* P/L (dashboard, reports, budgets).
 
     Stricter than `counts_as_pnl`: also drops settlement *credits*. Under
@@ -89,7 +121,7 @@ def counts_as_user_pnl():
     track real cash through the account, not user P/L.
     """
     return and_(
-        counts_as_pnl(),
+        counts_as_pnl(include_planned),
         Transaction.source != "settlement",
     )
 
@@ -102,6 +134,7 @@ async def owner_split_offset_pnl(
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
     workspace_id: Optional[uuid.UUID] = None,
+    include_planned: bool = False,
 ) -> tuple[float, float]:
     """Return (income_offset, expense_offset) — the totals to *subtract*
     from the owner's full-amount aggregations so only their own share
@@ -157,7 +190,7 @@ async def owner_split_offset_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
         )
         .group_by(Transaction.currency)
     )
@@ -195,6 +228,7 @@ async def owner_split_offset_by_category(
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
     workspace_id: Optional[uuid.UUID] = None,
+    include_planned: bool = False,
 ) -> dict:
     """Per-category, sum of non-owner shares on owner-side debit splits —
     subtract from full owner debits to get the owner's category share."""
@@ -235,7 +269,7 @@ async def owner_split_offset_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )
@@ -265,6 +299,7 @@ async def viewer_shared_pnl(
     month_end: date,
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
+    include_planned: bool = False,
 ) -> tuple[float, float]:
     """Return (income, expense) totals contributed by transactions the
     viewer doesn't own but participates in via a group split.
@@ -317,7 +352,7 @@ async def viewer_shared_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            counts_as_pnl(),
+            counts_as_pnl(include_planned),
         )
         .group_by(Transaction.currency)
     )
@@ -358,6 +393,7 @@ async def viewer_shared_spending_by_category(
     month_end: date,
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
+    include_planned: bool = False,
 ) -> dict:
     """Return {category_id (uuid|None): total_share_expense_float} for
     transactions where the viewer participates via a group split.
@@ -394,7 +430,7 @@ async def viewer_shared_spending_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            counts_as_pnl(),
+            counts_as_pnl(include_planned),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )

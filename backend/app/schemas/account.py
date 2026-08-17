@@ -60,6 +60,8 @@ class AccountRead(AccountBase):
     balance_primary: Optional[float] = None
     credit_limit: Optional[float] = None
     available_credit: Optional[float] = None
+    committed_credit: Optional[float] = None
+    planned_amount: Optional[float] = None
     statement_close_day: Optional[int] = None
     payment_due_day: Optional[int] = None
     next_close_date: Optional[date] = None

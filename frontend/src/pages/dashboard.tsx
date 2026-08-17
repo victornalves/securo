@@ -47,6 +47,7 @@ import { TransactionDialog, extractApiError } from '@/components/transaction-dia
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { IncludePlannedToggle } from '@/components/include-planned-toggle'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
@@ -144,6 +145,15 @@ export default function DashboardPage() {
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
   const queryClient = useQueryClient()
+
+  // Planned entries whose date has passed. Promotion is manual and sync
+  // inserts a second row rather than merging, so a forgotten one
+  // double-counts while the toggle is on — this is what makes that
+  // visible instead of showing up as an unexplainable total.
+  const { data: overduePlanned } = useQuery({
+    queryKey: ['transactions', 'planned', 'overdue'],
+    queryFn: () => transactions.overduePlanned(),
+  })
   const [headerCalOpen, setHeaderCalOpen] = useState(false)
   const [hoveredDay, setHoveredDay] = useState<number | null>(null)
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
@@ -573,38 +583,55 @@ export default function DashboardPage() {
         section={greeting}
         title={monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
         action={
-          <div className="flex items-center gap-1">
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
-            >&#8249;</button>
-            <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
-                >
-                  <CalendarIcon className="size-3.5 text-muted-foreground" />
-                  {monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="center" className="w-auto p-0">
-                <MonthPicker
-                  locale={dateFnsLocale}
-                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onMonthSelect={(date) => {
-                    if (!date) return
-                    const newMonth = format(date, 'yyyy-MM')
-                    setSelectedMonth(newMonth)
-                    setHeaderCalOpen(false)
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
-            >&#8250;</button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <IncludePlannedToggle />
+
+
+            {(overduePlanned?.count ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => navigate('/transactions?status=planned')}
+                title={t('transactions.overduePlannedHint')}
+                className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-100 dark:bg-amber-500/20 px-2.5 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-500/30 transition-colors whitespace-nowrap"
+              >
+                <span className="tabular-nums">{overduePlanned?.count}</span>
+                {t('transactions.overduePlanned')}
+              </button>
+            )}
+
+            <div className="flex items-center gap-1">
+              <button
+                className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
+                onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
+              >&#8249;</button>
+              <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
+                  >
+                    <CalendarIcon className="size-3.5 text-muted-foreground" />
+                    {monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="center" className="w-auto p-0">
+                  <MonthPicker
+                    locale={dateFnsLocale}
+                    selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
+                    onMonthSelect={(date) => {
+                      if (!date) return
+                      const newMonth = format(date, 'yyyy-MM')
+                      setSelectedMonth(newMonth)
+                      setHeaderCalOpen(false)
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+              <button
+                className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
+                onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
+              >&#8250;</button>
+            </div>
           </div>
         }
       />

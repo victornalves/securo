@@ -57,6 +57,7 @@ async def get_account_summary(
     summary = await account_service.get_account_summary(
         session, account_id, ctx.workspace.id, date_from=from_date, date_to=to_date,
         bill_id=bill_id, unbilled_only=unbilled_only,
+        include_planned=ctx.user.include_planned,
     )
     if not summary:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")

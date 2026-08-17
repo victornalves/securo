@@ -283,7 +283,9 @@
     "fxRateUsed": "Taux de change : {{rate}}",
     "refreshRates": "Actualiser les taux de change",
     "ratesRefreshed": "Taux de change mis à jour",
-    "ratesError": "Échec de la mise à jour des taux de change"
+    "ratesError": "Échec de la mise à jour des taux de change",
+    "includePlanned": "Inclure les planifiés",
+    "includePlannedHint": "Intègre les engagements planifiés aux totaux. Les soldes ne les incluent jamais."
   },
   "transactions": {
     "title": "Transactions",
@@ -492,7 +494,17 @@
         "last90": "90 derniers jours",
         "thisYear": "Cette année"
       }
-    }
+    },
+    "plannedLabel": "Planifié — pas encore effectué",
+    "plannedHint": "Exclu des soldes et des dépenses réalisées. Activé par défaut pour les dates futures.",
+    "statusPlanned": "Planifié",
+    "plannedBadge": "Planifié",
+    "promoteAction": "Marquer comme effectué",
+    "filterStatus": "État",
+    "filterStatusAll": "Tous les états",
+    "overduePlanned": "Planifiés en retard",
+    "overduePlannedHint": "Écritures planifiées dont la date est passée. Confirmez-les ou supprimez-les.",
+    "overduePlannedEmpty": "Rien en retard."
   },
   "accounts": {
     "title": "Comptes",
@@ -632,7 +644,9 @@
         "description": "Banques américaines et internationales via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Banque reconnectée avec succès"
+    "reconnected": "Banque reconnectée avec succès",
+    "committedCredit": "Crédit engagé",
+    "plannedAmount": "Planifié"
   },
   "connections": {
     "settings": "Paramètres de connexion",

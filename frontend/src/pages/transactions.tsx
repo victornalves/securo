@@ -139,6 +139,9 @@ export default function TransactionsPage() {
   const [filterPayee, setFilterPayee] = useState<string>(searchParams.get('payee_id') ?? '')
   const [filterGroupId, setFilterGroupId] = useState<string>(searchParams.get('group_id') ?? '')
   const [filterType, setFilterType] = useState<string>(searchParams.get('type') ?? '')
+  // Visibility only. Never derived from the include-planned preference —
+  // list contents must be identical in both preference states (spec D3).
+  const [filterStatus, setFilterStatus] = useState<string>(searchParams.get('status') ?? '')
   const [filterMinAmount, setFilterMinAmount] = useState<string>(searchParams.get('min_amount') ?? '')
   const [filterMaxAmount, setFilterMaxAmount] = useState<string>(searchParams.get('max_amount') ?? '')
   const [tagFilters, setTagFilters] = useState<string[]>([])
@@ -214,6 +217,7 @@ export default function TransactionsPage() {
     setFilterPayee(searchParams.get('payee_id') ?? '')
     setFilterGroupId(searchParams.get('group_id') ?? '')
     setFilterType(searchParams.get('type') ?? '')
+    setFilterStatus(searchParams.get('status') ?? '')
     const categories = searchParams.get('category_id');
     setFilterCategoryIds(categories ? categories.split(',') : []);
     setFilterUncategorized(searchParams.get('uncategorized') === '1');
@@ -246,6 +250,7 @@ export default function TransactionsPage() {
         ['payee_id', filterPayee],
         ['group_id', filterGroupId],
         ['type', filterType],
+        ['status', filterStatus],
         ['category_id', filterCategoryIds.join(',')],
         ['uncategorized', filterUncategorized ? '1' : ''],
         ['account_id', filterAccountIds.join(',')],
@@ -267,6 +272,7 @@ export default function TransactionsPage() {
     filterPayee,
     filterGroupId,
     filterType,
+    filterStatus,
     filterCategoryIds,
     filterUncategorized,
     filterAccountIds,
@@ -290,7 +296,7 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
 
   // Reset bulk category when selection changes so the same category can be re-applied
   useEffect(() => {
@@ -331,7 +337,7 @@ export default function TransactionsPage() {
     && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, tagFilters, grid.sortBy, grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, tagFilters, grid.sortBy, grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -342,6 +348,7 @@ export default function TransactionsPage() {
         payee_id: filterPayee || undefined,
         group_id: filterGroupId || undefined,
         type: filterType || undefined,
+        status: filterStatus || undefined,
         uncategorized: filterUncategorized ? true : undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
@@ -486,6 +493,22 @@ export default function TransactionsPage() {
       setDialogOpen(false)
       setEditingTx(null)
       toast.success(t('transactions.deleted'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const promotePlannedMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      for (const id of ids) {
+        await transactions.update(id, { status: 'posted' })
+      }
+    },
+    onSuccess: () => {
+      invalidateAfterTxMutation()
+      setSelectedIds(new Set())
+      toast.success(t('transactions.updated'))
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -967,6 +990,14 @@ export default function TransactionsPage() {
               </span>
                             )
             }
+            {tx.status === 'planned' && (
+              <span
+                className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-500/20 border border-violet-200 dark:border-violet-500/30 px-1.5 py-0.5 rounded-full"
+                title={t('transactions.plannedHint')}
+              >
+                {t('transactions.plannedBadge')}
+              </span>
+            )}
             {tx.recurring_transaction_id != null && (
               <span
                 className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
@@ -1121,10 +1152,18 @@ export default function TransactionsPage() {
         )
       case 'status':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground capitalize`}>
-            {tx.status === 'pending'
-              ? t('transactions.statusPending')
-              : t('transactions.statusPosted')}
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm`}>
+            {tx.status === 'planned' ? (
+              <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-500/20 border border-violet-200 dark:border-violet-500/30 px-1.5 py-0.5 rounded-full">
+                {t('transactions.statusPlanned')}
+              </span>
+            ) : tx.status === 'pending' ? (
+              <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full">
+                {t('transactions.statusPending')}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">{t('transactions.statusPosted')}</span>
+            )}
           </TableCell>
         )
     }
@@ -1133,6 +1172,13 @@ export default function TransactionsPage() {
   // A single non-shared, non-transfer row selected can be duplicated; shared
   // and transfer rows can't (issue #158). Computed once for both the desktop
   // button and the mobile overflow menu.
+  const allSelectedArePlanned =
+    canWrite &&
+    selectedIds.size > 0 &&
+    (data?.items ?? [])
+      .filter(tx => selectedIds.has(tx.id))
+      .every(tx => tx.status === 'planned')
+
   const selectedSingleTx = canWrite && selectedIds.size === 1
     ? filteredItems.find(tx => selectedIds.has(tx.id))
     : undefined
@@ -1259,6 +1305,8 @@ export default function TransactionsPage() {
         onGroupIdChange={(v) => { setFilterGroupId(v); setPage(1) }}
         filterType={filterType}
         onTypeChange={(v) => { setFilterType(v); setPage(1) }}
+        filterStatus={filterStatus}
+        onStatusChange={(v) => { setFilterStatus(v); setPage(1) }}
         filterFrom={filterFrom}
         filterTo={filterTo}
         onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
@@ -1274,6 +1322,7 @@ export default function TransactionsPage() {
           setFilterPayee('')
           setFilterGroupId('')
           setFilterType('')
+          setFilterStatus('')
           setFilterMinAmount('')
           setFilterMaxAmount('')
           setSearchInput('')
@@ -1578,6 +1627,23 @@ export default function TransactionsPage() {
               <Users size={15} className="lg:mr-1.5" />
               <span className="hidden lg:inline">{t('transactions.addToGroup')}</span>
             </Button>
+
+            {allSelectedArePlanned && (
+              <>
+                <div className="w-px bg-border/60 self-stretch" />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={promotePlannedMutation.isPending}
+                  onClick={() => promotePlannedMutation.mutate(Array.from(selectedIds))}
+                  title={t('transactions.promoteAction')}
+                  className="h-8 px-3 shrink-0 text-sm"
+                >
+                  <Check size={15} className="lg:mr-1.5" />
+                  <span className="hidden lg:inline">{t('transactions.promoteAction')}</span>
+                </Button>
+              </>
+            )}
 
             <div className="w-px bg-border/60 self-stretch" />
 
