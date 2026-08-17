@@ -16,6 +16,7 @@ from app.models.category import Category
 from app.models.user import User
 from app.services._query_filters import (
     counts_as_pnl,
+    counts_as_realized,
     counts_as_user_pnl,
     owner_split_offset_by_category,
     reporting_date_col,
@@ -451,6 +452,7 @@ async def get_income_expenses_report(
     # Get user's primary currency + global reporting mode
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+    include_planned = user.include_planned if user else False
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
 
@@ -472,7 +474,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= end,
             Transaction.source != "opening_balance",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
             *acct_filter,
         )
         .group_by(label_expr)
@@ -529,7 +531,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= end,
             Transaction.source != "opening_balance",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
         )
         .group_by(label_expr, Transaction.currency)
     )
@@ -592,7 +594,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= end,
             Transaction.source != "opening_balance",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
         )
         .group_by(label_expr, Transaction.currency)
     )
@@ -741,7 +743,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= end,
             Transaction.source != "opening_balance",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
             *acct_filter,
         )
         .group_by(Category.id, Category.name, Category.color, Transaction.type)
@@ -770,6 +772,7 @@ async def get_income_expenses_report(
         session, user_id, start, end + timedelta(days=1),
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        include_planned=include_planned,
     )
     for cat_uuid, offset_total in full_range_offset.items():
         cat_key = str(cat_uuid) if cat_uuid else "uncategorized"
@@ -841,7 +844,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= end,
             Transaction.source != "opening_balance",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
             *acct_filter,
         )
         .group_by(label_expr, Category.id, Category.name, Category.color, Transaction.type)
@@ -888,7 +891,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= end,
             Transaction.source != "opening_balance",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
         )
         .group_by(label_expr, Transaction.category_id, Transaction.currency)
     )
@@ -1085,7 +1088,7 @@ async def _get_earliest_transaction_date(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             Transaction.source != "opening_balance",
-            counts_as_pnl(),
+            counts_as_realized(),
         )
     )
     return result.scalar_one_or_none()
@@ -1150,7 +1153,7 @@ async def _get_baseline_projection(
             Transaction.date >= window_start,
             Transaction.date <= today,
             Transaction.source != "opening_balance",
-            counts_as_pnl(),
+            counts_as_realized(),
             *acct_filter,
         )
     )
@@ -1246,6 +1249,7 @@ async def get_cash_flow_report(
 
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+    include_planned = user.include_planned if user else False
 
     accounting_mode = await get_credit_card_accounting_mode(session)
     accrual = accounting_mode == "accrual"
@@ -1299,7 +1303,7 @@ async def get_cash_flow_report(
             flow_date_col > chart_start,
             flow_date_col <= pivot,
             Transaction.source != "opening_balance",
-            counts_as_pnl(),
+            counts_as_pnl(include_planned),
             *acct_filter,
         )
     )
@@ -1328,7 +1332,7 @@ async def get_cash_flow_report(
             flow_date_col > pivot,
             flow_date_col <= end,
             Transaction.source != "opening_balance",
-            counts_as_pnl(),
+            counts_as_pnl(include_planned),
             *acct_filter,
         )
     )
@@ -1363,7 +1367,7 @@ async def get_cash_flow_report(
                 Transaction.effective_date > pivot,
                 Transaction.effective_date <= end,
                 Transaction.source != "opening_balance",
-                counts_as_pnl(),
+                counts_as_pnl(include_planned),
                 *acct_filter,
             )
         )

@@ -229,6 +229,7 @@ async def _actual_spending_by_category(
     primary_currency: str,
     accounting_mode: str,
     include_uncategorized: bool = False,
+    include_planned: bool = False,
 ) -> dict[Optional[str], Decimal]:
     """Realized spending per category over ``[start, end)``, in primary currency.
 
@@ -249,7 +250,7 @@ async def _actual_spending_by_category(
         Transaction.type == "debit",
         report_date >= start,
         report_date < end,
-        counts_as_user_pnl(),
+        counts_as_user_pnl(include_planned),
     ]
     if not include_uncategorized:
         conditions.append(Transaction.category_id.isnot(None))
@@ -272,6 +273,7 @@ async def _actual_spending_by_category(
         use_effective_date=use_effective_date,
         primary_currency=primary_currency,
         workspace_id=workspace_id,
+        include_planned=include_planned,
     )
     for cat_uuid, total in own_offset.items():
         if cat_uuid is None and not include_uncategorized:
@@ -290,6 +292,7 @@ async def _actual_spending_by_category(
         session, user_id, start, end,
         use_effective_date=use_effective_date,
         primary_currency=primary_currency,
+        include_planned=include_planned,
     )
     for cat_uuid, total in shared_by_cat.items():
         if cat_uuid is None and not include_uncategorized:
@@ -356,13 +359,14 @@ async def get_budget_vs_actual(
 
     # Actual spending for this month, and for the previous one so the trend
     # comparison is apples-to-apples.
+    include_planned = user.include_planned if user else False
     spending_map = await _actual_spending_by_category(
         session, workspace_id, user_id, month_start, month_end,
-        primary_currency, accounting_mode,
+        primary_currency, accounting_mode, include_planned=include_planned,
     )
     prev_spending_map = await _actual_spending_by_category(
         session, workspace_id, user_id, prev_month_start, prev_month_end,
-        primary_currency, accounting_mode,
+        primary_currency, accounting_mode, include_planned=include_planned,
     )
 
     comparisons = []
@@ -455,6 +459,7 @@ async def get_budget_window_totals(
         session, workspace_id, user_id, start, end,
         primary_currency, accounting_mode,
         include_uncategorized=True,
+        include_planned=user.include_planned if user else False,
     )
 
     budgeted_ids = {cat_id for cat_id, amount in budgeted.items() if amount > 0}

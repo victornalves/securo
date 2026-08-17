@@ -374,6 +374,13 @@ function TransactionForm({
   const [hadInitialFx] = useState(
     !!transaction && (seed?.amount_primary != null || seed?.fx_rate_used != null)
   )
+  // Planned = recorded but not yet realized. On creation the control
+  // mirrors the date, but only until the user touches it: someone who
+  // deliberately keeps a bill planned past its due date (because the real
+  // amount hasn't arrived) must not have that undone by a date edit. On an
+  // existing transaction the date never drives the state at all.
+  const [isPlanned, setIsPlanned] = useState(seed?.status === 'planned')
+  const plannedTouched = useRef(false)
   const [isRecurring, setIsRecurring] = useState(false)
   const [frequency, setFrequency] = useState<'monthly' | 'weekly' | 'yearly'>('monthly')
   const [endDate, setEndDate] = useState('')
@@ -402,6 +409,12 @@ function TransactionForm({
     return !!(existing && existing.length > 0)
   })
   const isCreating = !transaction
+
+  useEffect(() => {
+    if (!isCreating || plannedTouched.current) return
+    const today = new Date().toISOString().split('T')[0]
+    setIsPlanned(date > today)
+  }, [date, isCreating])
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
   // surfaced the raw amount anyway (issue #323). Only existing transactions
@@ -662,6 +675,7 @@ function TransactionForm({
               account_id: accountId || undefined,
               notes: notes.trim() || null,
               is_ignored: isIgnored,
+              status: isPlanned ? 'planned' : 'posted',
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
@@ -1002,6 +1016,33 @@ function TransactionForm({
           onFileChange={(e) => { if (e.target.files?.length) { addPendingFiles(e.target.files); e.target.value = '' } }}
           onRemove={removePendingFile}
         />
+      )}
+
+      {/* Planned toggle — the state of a synced row is provider-owned
+          (pending/posted), so offering the choice there would misrepresent
+          what the control does. */}
+      {!isSynced && (
+        <div className="border rounded-md p-3">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isPlanned}
+              onChange={(e) => {
+                plannedTouched.current = true
+                setIsPlanned(e.target.checked)
+              }}
+              className="rounded border-gray-300 mt-0.5"
+            />
+            <span>
+              <span className="text-sm font-medium block">
+                {t('transactions.plannedLabel')}
+              </span>
+              <span className="text-xs text-muted-foreground block">
+                {t('transactions.plannedHint')}
+              </span>
+            </span>
+          </label>
+        </div>
       )}
 
       {/* Recurring toggle — only shown when creating non-synced */}

@@ -15,6 +15,7 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, BalanceHistory
 from app.services._query_filters import (
     counts_as_user_pnl,
+    is_realized,
     owner_split_offset_by_category,
     owner_split_offset_pnl,
     reporting_date_col,
@@ -126,6 +127,7 @@ async def get_summary(
     # date (effective_date) instead of the purchase date — gives a true
     # cash-flow view.
     user = await session.get(User, user_id)
+    include_planned = user.include_planned if user else False
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
 
@@ -168,7 +170,7 @@ async def get_summary(
             report_date >= month_start,
             report_date < month_end,
             Transaction.source != "opening_balance",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
             *acct_filter,
         )
     )
@@ -186,6 +188,7 @@ async def get_summary(
             month_end,
             use_effective_date=False,
             workspace_id=workspace_id,
+            include_planned=include_planned,
         )
         monthly_income -= own_offset_inc
         monthly_expenses -= own_offset_exp
@@ -194,7 +197,8 @@ async def get_summary(
         # member but not the owner. Their concert ticket paid by a friend
         # is a real expense in their P/L picture.
         shared_income, shared_expenses = await viewer_shared_pnl(
-            session, user_id, month_start, month_end, use_effective_date=False
+            session, user_id, month_start, month_end, use_effective_date=False,
+            include_planned=include_planned,
         )
         monthly_income += shared_income
         monthly_expenses += shared_expenses
@@ -289,7 +293,7 @@ async def get_summary(
             report_date >= month_start,
             report_date < month_end,
             Transaction.source != "opening_balance",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
             Transaction.amount_primary.isnot(None),
             *acct_filter,
         )
@@ -309,6 +313,7 @@ async def get_summary(
             use_effective_date=False,
             primary_currency=primary_currency,
             workspace_id=workspace_id,
+            include_planned=include_planned,
         )
         monthly_income_primary -= own_offset_inc_pri
         monthly_expenses_primary -= own_offset_exp_pri
@@ -351,7 +356,7 @@ async def get_summary(
                 Transaction.source != "opening_balance",
                 report_date >= month_start,
                 report_date < month_end,
-                counts_as_user_pnl(),
+                counts_as_user_pnl(include_planned),
             )
             .group_by(Transaction.currency)
         )
@@ -492,6 +497,7 @@ async def get_spending_by_category(
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
 
     user = await session.get(User, user_id)
+    include_planned = user.include_planned if user else False
     accounting_mode = await get_credit_card_accounting_mode(session)
     primary_currency = user.primary_currency if user else get_settings().default_currency
     report_date = reporting_date_col(accounting_mode)
@@ -515,7 +521,7 @@ async def get_spending_by_category(
             Transaction.type == "debit",
             report_date >= month_start,
             report_date < month_end,
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
             *acct_filter,
         )
         .group_by(Category.id, Category.name, Category.icon, Category.color)
@@ -543,6 +549,7 @@ async def get_spending_by_category(
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
+        include_planned=include_planned,
     )
     for cat_uuid, offset_total in owner_offset.items():
         cat_id = str(cat_uuid) if cat_uuid else None
@@ -558,6 +565,7 @@ async def get_spending_by_category(
         session, user_id, month_start, month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
+        include_planned=include_planned,
     )
     if shared_by_cat:
         cat_meta_cache: dict[str, dict] = {}
@@ -655,6 +663,8 @@ async def get_monthly_trend(
 ) -> list[MonthlyTrend]:
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
+    user = await session.get(User, user_id)
+    include_planned = user.include_planned if user else False
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
     month_label = func.to_char(report_date, 'YYYY-MM').label('month')
@@ -670,7 +680,7 @@ async def get_monthly_trend(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             Transaction.source != "opening_balance",
-            counts_as_user_pnl(),
+            counts_as_user_pnl(include_planned),
             *acct_filter,
         )
         .group_by(month_label)
@@ -678,7 +688,6 @@ async def get_monthly_trend(
         .limit(months)
     )
 
-    user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
     trends_raw: list[tuple[str, float, float]] = []
@@ -704,11 +713,13 @@ async def get_monthly_trend(
                 use_effective_date=accounting_mode == "accrual",
                 primary_currency=primary_currency,
                 workspace_id=workspace_id,
+                include_planned=include_planned,
             )
             shared_inc, shared_exp = await viewer_shared_pnl(
                 session, user_id, m_start, m_end,
                 use_effective_date=accounting_mode == "accrual",
                 primary_currency=primary_currency,
+                include_planned=include_planned,
             )
         adjusted.append(
             MonthlyTrend(
@@ -880,14 +891,24 @@ async def _account_balance_at(
         current_bal = float(account.balance)
         if account.type == "credit_card":
             current_bal = -current_bal
-        # Subtract activity after cutoff to get the balance AT cutoff
+        # Subtract activity after cutoff to get the balance AT cutoff.
+        # Bounded at today on the upper end: the provider balance describes
+        # *now*, so only transactions between the cutoff and today were
+        # applied to it. Without that bound a future-dated row is walked
+        # back too, and since a debit contributes a negative delta,
+        # subtracting it *inflates* today's balance by its amount.
+        # For a cutoff at or after today the window is empty and the
+        # provider balance is returned unchanged — future days belong to
+        # the projection layer, not here.
         # Exclude ignored transactions from balance calculation
         delta_after = await session.scalar(
             select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
             .where(
                 Transaction.account_id == account.id,
                 Transaction.date > cutoff,
+                Transaction.date <= date.today(),
                 Transaction.is_ignored == False,
+                is_realized(),
             )
         )
         return current_bal - float(delta_after or 0)
@@ -900,6 +921,7 @@ async def _account_balance_at(
                 Transaction.account_id == account.id,
                 Transaction.date <= cutoff,
                 Transaction.is_ignored == False,
+                is_realized(),
             )
         )
         return float(result or 0)
@@ -951,6 +973,7 @@ async def _daily_deltas(
     *,
     primary_currency_hint: Optional[str] = None,
     account_ids: Optional[list[uuid.UUID]] = None,
+    include_planned: bool = False,
 ) -> dict[int, float]:
     """Get daily balance deltas for a date range [start, end).
     Computes per-account in native currency (using amount_primary only for
@@ -979,6 +1002,7 @@ async def _daily_deltas(
             Transaction.date >= start,
             Transaction.date < end,
             Transaction.is_ignored == False,
+            *([] if include_planned else [is_realized()]),
             or_(
                 Transaction.category_id.is_(None),
                 Category.is_ignored == False,
@@ -1045,11 +1069,27 @@ async def get_balance_history(
         primary_currency_hint=primary_currency, account_ids=account_ids,
     )
 
-    # Daily deltas from real transactions
+    # Daily deltas from real transactions. The month is walked in two
+    # segments because the two halves answer different questions: days up to
+    # today describe what settled and must stay realized-only, while future
+    # days are a projection — that's where planned commitments belong, when
+    # the user asked for them. Future *posted* rows are kept in both cases.
+    include_planned = user.include_planned if user else False
+    settled_end = min(month_end, today + timedelta(days=1))
     current_deltas = await _daily_deltas(
-        session, workspace_id, month_start, month_end,
+        session, workspace_id, month_start, settled_end,
         primary_currency_hint=primary_currency, account_ids=account_ids,
     )
+    if month_end > settled_end:
+        future_deltas = await _daily_deltas(
+            session, workspace_id, settled_end, month_end,
+            primary_currency_hint=primary_currency, account_ids=account_ids,
+            include_planned=include_planned,
+        )
+        for day, delta in future_deltas.items():
+            current_deltas[day] = current_deltas.get(day, 0) + delta
+
+    # The previous month is entirely in the past — settled only.
     prev_deltas = await _daily_deltas(
         session, workspace_id, prev_month_start, prev_month_end,
         primary_currency_hint=primary_currency, account_ids=account_ids,

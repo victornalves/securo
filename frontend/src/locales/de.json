@@ -283,7 +283,9 @@
     "fxRateUsed": "Wechselkurs: {{rate}}",
     "refreshRates": "Wechselkurse aktualisieren",
     "ratesRefreshed": "Wechselkurse aktualisiert",
-    "ratesError": "Fehler beim Aktualisieren der Wechselkurse"
+    "ratesError": "Fehler beim Aktualisieren der Wechselkurse",
+    "includePlanned": "Geplante einbeziehen",
+    "includePlannedHint": "Rechnet geplante Verpflichtungen in die Summen ein. Salden enthalten sie nie."
   },
   "transactions": {
     "title": "Transaktionen",
@@ -492,7 +494,17 @@
         "last90": "Letzte 90 Tage",
         "thisYear": "Dieses Jahr"
       }
-    }
+    },
+    "plannedLabel": "Geplant — noch nicht erfolgt",
+    "plannedHint": "Bleibt aus Salden und tatsächlichen Ausgaben heraus. Bei künftigen Daten standardmäßig aktiv.",
+    "statusPlanned": "Geplant",
+    "plannedBadge": "Geplant",
+    "promoteAction": "Als erfolgt markieren",
+    "filterStatus": "Status",
+    "filterStatusAll": "Alle Status",
+    "overduePlanned": "Überfällig geplant",
+    "overduePlannedHint": "Geplante Buchungen, deren Datum verstrichen ist. Bestätigen oder entfernen.",
+    "overduePlannedEmpty": "Nichts überfällig."
   },
   "accounts": {
     "title": "Konten",
@@ -632,7 +644,9 @@
         "description": "US-amerikanische und internationale Banken via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Bank erfolgreich erneut verbunden"
+    "reconnected": "Bank erfolgreich erneut verbunden",
+    "committedCredit": "Gebundener Kreditrahmen",
+    "plannedAmount": "Geplant"
   },
   "connections": {
     "settings": "Verbindungseinstellungen",

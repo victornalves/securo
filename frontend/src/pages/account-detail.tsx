@@ -1104,6 +1104,20 @@ export default function AccountDetailPage() {
                   ? mask(formatCurrency(Number(account.available_credit), account.currency, locale))
                   : '—'}
               </p>
+              {account.committed_credit != null
+                && account.planned_amount != null
+                && Number(account.planned_amount) > 0 && (
+                <p className="text-[10px] sm:text-xs mt-1 tabular-nums text-muted-foreground">
+                  {t('accounts.committedCredit')}:{' '}
+                  <span className="font-semibold text-violet-700 dark:text-violet-300">
+                    {mask(formatCurrency(Number(account.committed_credit), account.currency, locale))}
+                  </span>
+                  <span className="ml-1">
+                    (−{mask(formatCurrency(Number(account.planned_amount), account.currency, locale))}{' '}
+                    {t('accounts.plannedAmount').toLowerCase()})
+                  </span>
+                </p>
+              )}
             </div>
             <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
               <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">

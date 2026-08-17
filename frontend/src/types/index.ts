@@ -76,6 +76,9 @@ export interface UserPreferences {
   currency_display?: string
   display_name?: string
   onboarding_completed?: boolean
+  /** Fold planned commitments into computed figures. Never affects
+   *  balances, and never affects what a list contains. */
+  include_planned?: boolean
 }
 
 export interface Category {
@@ -143,6 +146,9 @@ export interface Account {
   currency: string
   credit_limit: number | null
   available_credit: number | null
+  /** available_credit minus planned purchases not yet drawn. */
+  committed_credit: number | null
+  planned_amount: number | null
   statement_close_day: number | null
   payment_due_day: number | null
   next_close_date: string | null
@@ -200,7 +206,7 @@ export interface Transaction {
   date: string
   type: 'debit' | 'credit'
   source: string
-  status: 'posted' | 'pending'
+  status: 'posted' | 'pending' | 'planned'
   payee: string | null
   payee_id: string | null
   payee_name: string | null

@@ -283,7 +283,9 @@
     "fxRateUsed": "FX rate: {{rate}}",
     "refreshRates": "Refresh FX rates",
     "ratesRefreshed": "FX rates updated",
-    "ratesError": "Failed to update FX rates"
+    "ratesError": "Failed to update FX rates",
+    "includePlanned": "Include planned",
+    "includePlannedHint": "Fold planned commitments into totals. Balances never include them."
   },
   "transactions": {
     "title": "Transactions",
@@ -492,7 +494,17 @@
         "last90": "Last 90 days",
         "thisYear": "This year"
       }
-    }
+    },
+    "plannedLabel": "Planned — hasn't happened yet",
+    "plannedHint": "Kept out of balances and realized spending. Turned on by default for future dates.",
+    "statusPlanned": "Planned",
+    "plannedBadge": "Planned",
+    "promoteAction": "Mark as realized",
+    "filterStatus": "State",
+    "filterStatusAll": "All states",
+    "overduePlanned": "Overdue planned",
+    "overduePlannedHint": "Planned entries whose date has passed. Confirm or remove them.",
+    "overduePlannedEmpty": "Nothing overdue."
   },
   "accounts": {
     "title": "Accounts",
@@ -632,7 +644,9 @@
         "description": "US and international banks via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Bank reconnected successfully"
+    "reconnected": "Bank reconnected successfully",
+    "committedCredit": "Committed credit",
+    "plannedAmount": "Planned"
   },
   "connections": {
     "settings": "Connection settings",

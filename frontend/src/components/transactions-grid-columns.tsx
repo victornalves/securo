@@ -41,7 +41,7 @@ export const COLUMN_REGISTRY: ColumnDef[] = [
   { id: 'tags',        labelKey: 'transactions.colTags',        defaultVisible: false, sortable: false, defaultWidth: 180, align: 'left' },
   { id: 'attachments', labelKey: 'transactions.colAttachments', defaultVisible: false, sortable: false, defaultWidth: 70,  align: 'right' },
   { id: 'type',        labelKey: 'transactions.colType',        defaultVisible: false, sortable: true,  defaultWidth: 100, align: 'left' },
-  { id: 'status',      labelKey: 'transactions.colStatus',      defaultVisible: false, sortable: true,  defaultWidth: 100, align: 'left' },
+  { id: 'status',      labelKey: 'transactions.colStatus',      defaultVisible: true,  sortable: true,  defaultWidth: 110, align: 'left' },
   { id: 'amount',      labelKey: 'transactions.colAmount',      alwaysOn: true, defaultVisible: true, sortable: true, defaultWidth: 160, align: 'right' },
 ]
 

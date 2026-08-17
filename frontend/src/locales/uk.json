@@ -283,7 +283,9 @@
     "fxRateUsed": "Курс: {{rate}}",
     "refreshRates": "Оновити курси валют",
     "ratesRefreshed": "Курси валют оновлено",
-    "ratesError": "Не вдалося оновити курси валют"
+    "ratesError": "Не вдалося оновити курси валют",
+    "includePlanned": "Враховувати заплановані",
+    "includePlannedHint": "Додає заплановані зобов'язання до підсумків. У залишки вони не входять ніколи."
   },
   "transactions": {
     "title": "Транзакції",
@@ -492,7 +494,17 @@
         "last90": "Останні 90 днів",
         "thisYear": "Цей рік"
       }
-    }
+    },
+    "plannedLabel": "Заплановано — ще не відбулося",
+    "plannedHint": "Не входить у залишки та фактичні витрати. Типово увімкнено для майбутніх дат.",
+    "statusPlanned": "Заплановано",
+    "plannedBadge": "Заплановано",
+    "promoteAction": "Позначити як проведене",
+    "filterStatus": "Стан",
+    "filterStatusAll": "Усі стани",
+    "overduePlanned": "Прострочені заплановані",
+    "overduePlannedHint": "Заплановані записи, дата яких минула. Підтвердьте або вилучіть.",
+    "overduePlannedEmpty": "Прострочених немає."
   },
   "accounts": {
     "title": "Рахунки",
@@ -632,7 +644,9 @@
         "description": "Банки США та інших країн через SimpleFIN Bridge"
       }
     },
-    "reconnected": "Банк успішно перепідключено"
+    "reconnected": "Банк успішно перепідключено",
+    "committedCredit": "Зайнятий ліміт",
+    "plannedAmount": "Заплановано"
   },
   "connections": {
     "settings": "Налаштування підключення",

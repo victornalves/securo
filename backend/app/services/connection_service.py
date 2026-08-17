@@ -786,6 +786,8 @@ async def _find_synced_duplicate(
     decides whether to upgrade its status (pending→posted + swap external_id)
     or skip the incoming insert. Synthetic bill-charge rows
     (`bill_charge:*`) are excluded — they have their own idempotency keys.
+    Planned rows are excluded too: sync never promotes or overwrites a
+    commitment the user recorded by hand.
     """
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -804,6 +806,7 @@ async def _find_synced_duplicate(
                 Transaction.amount == txn_data.amount,
                 Transaction.type == txn_data.type,
                 Transaction.external_id != txn_data.external_id,
+                Transaction.status != "planned",
             )
         )
         for candidate in result.scalars():
@@ -826,6 +829,12 @@ async def _find_synced_duplicate(
             Transaction.type == txn_data.type,
             Transaction.status != txn_data.status,
             Transaction.external_id != txn_data.external_id,
+            # A planned row is the user's own commitment, not a provider
+            # twin. `status != txn_data.status` would happily match one
+            # against an incoming posted row and the caller would then
+            # overwrite it — silently doing the auto-reconciliation the
+            # spec defers (planning/002-planned-transactions, D2).
+            Transaction.status != "planned",
         )
     )
     for candidate in result.scalars():

@@ -4,7 +4,7 @@
 | ------------ | ------------ |
 | ID           | 002          |
 | Status       | Approved     |
-| Version      | 1.0.0        |
+| Version      | 1.1.0        |
 | Spec         | ./spec.md    |
 | Author       | Victor Alves |
 | Last updated | 2026-08-15   |
@@ -163,6 +163,13 @@ never reaches a list query, whose visibility is controlled by an explicit `statu
 - **Decision:** `preferences["include_planned"]`, defaulting to `false` when absent. No migration.
   Writes follow the copy-then-assign pattern at `app/api/workspaces.py:148-150`, required because
   SQLAlchemy does not track in-place mutation of a JSON dict.
+- **Amendment (during T4):** exposed as a `User.include_planned` property and read inside the
+  service functions, which already call `session.get(User, user_id)` for `primary_currency`. The
+  original wording said "read at the API boundary and thread down as a parameter"; that is not the
+  existing convention here, and following it would have added a parameter to every dashboard,
+  budget and report endpoint for a value the service already has in hand. `User.primary_currency`
+  (`models/user.py:42`) is the precedent being matched. The ADR's actual constraint is unchanged:
+  `_query_filters` stays a set of pure filter builders taking a bool, doing no I/O.
 - **Alternatives considered:** A dedicated column — rejected as a migration for one boolean when a
   preferences bag already exists. `AppSetting` — wrong scope, it is global and admin-managed.
 - **Consequences:** No database-level typing or default. Reads must tolerate a missing key, and the
@@ -314,3 +321,4 @@ Deferred implementation choices, recorded so they are not rediscovered as gaps:
 | ------- | ---------- | ------------ | ------------ |
 | 0.1.0   | 2026-08-15 | Victor Alves | Initial plan |
 | 1.0.0   | 2026-08-15 | Victor Alves | Approved. Broken into tasks T1–T14. |
+| 1.1.0   | 2026-08-15 | Victor Alves | Amended the preference ADR during T4: read via a `User.include_planned` property inside the services (matching the existing `primary_currency` precedent) rather than threaded from the API boundary. Layering unchanged. |

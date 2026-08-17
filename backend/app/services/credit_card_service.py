@@ -66,6 +66,27 @@ def compute_available_credit(
     return credit_limit - utilized
 
 
+def compute_committed_credit(
+    credit_limit: Optional[Decimal],
+    current_balance: Decimal,
+    planned_total: Decimal,
+) -> Optional[Decimal]:
+    """available_credit minus purchases the user has planned but not yet drawn.
+
+    `available_credit` answers "what has the bank charged me?"; this answers
+    "how much room do I actually have?". Both are worth showing.
+
+    `planned_total` is summed over *all* planned debits on the card,
+    regardless of date: a future instalment of a purchase already made is
+    committed today, not when its date arrives
+    (planning/002-planned-transactions).
+    """
+    available = compute_available_credit(credit_limit, current_balance)
+    if available is None:
+        return None
+    return available - planned_total
+
+
 def apply_effective_date(transaction, account, *, bill_due_date: Optional[date] = None) -> None:
     """Populate `transaction.effective_date` based on the account type.
 

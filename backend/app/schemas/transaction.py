@@ -34,6 +34,12 @@ class TransactionCreate(TransactionBase):
     fx_rate_used: Optional[Decimal] = None
     effective_bill_date: Optional[_Date] = None
     splits: Optional[TransactionSplitsInput] = None
+    # `planned` = recorded but not yet realized (future commitment). Not
+    # inferred from the date: the client decides, because "keep this planned
+    # even though its date has passed" (a bill whose real amount hasn't
+    # arrived) can't be expressed by a date rule. `pending` is provider-owned
+    # and deliberately not settable here.
+    status: Literal["posted", "planned"] = "posted"
 
 
 class TransactionUpdate(BaseModel):
@@ -50,6 +56,9 @@ class TransactionUpdate(BaseModel):
     fx_rate_used: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
     apply_to_transfer_pair: bool = False
+    # Promotion (planned → posted) is an ordinary update. `pending` stays
+    # provider-owned and is not settable by a client.
+    status: Optional[Literal["posted", "planned"]] = None
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.
     effective_bill_date: Optional[_Date] = None

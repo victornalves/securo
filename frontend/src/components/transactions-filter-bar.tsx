@@ -59,6 +59,8 @@ interface TransactionsFilterBarProps {
   onGroupIdChange: (value: string) => void
   filterType: string
   onTypeChange: (value: string) => void
+  filterStatus: string
+  onStatusChange: (value: string) => void
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -96,6 +98,8 @@ export function TransactionsFilterBar({
   filterGroupId,
   onGroupIdChange,
   filterType,
+  filterStatus,
+  onStatusChange,
   onTypeChange,
   filterFrom,
   filterTo,
@@ -185,6 +189,7 @@ export function TransactionsFilterBar({
     !!filterPayee ||
     !!filterGroupId ||
     !!filterType ||
+    !!filterStatus ||
     !!filterFrom ||
     !!filterTo ||
     !!filterMinAmount ||
@@ -197,6 +202,10 @@ export function TransactionsFilterBar({
       : filterType === 'debit'
         ? t('transactions.expense')
         : ''
+
+  const statusLabel = filterStatus
+    ? t(`transactions.status${filterStatus.charAt(0).toUpperCase()}${filterStatus.slice(1)}`)
+    : ''
 
   const dateLabel = useMemo(() => {
     if (!filterFrom && !filterTo) return null
@@ -632,6 +641,48 @@ export function TransactionsFilterBar({
                             {opt.label}
                           </span>
                           {filterType === opt.value && (
+                            <Check size={13} className="text-primary" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuPortal>
+                </DropdownMenuSub>
+
+                {/* State submenu (planned / pending / posted). Visibility
+                    only — the include-planned preference governs figures and
+                    never touches a list. */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="gap-2 text-[13px]">
+                    <ListFilter size={14} className="text-muted-foreground" />
+                    <span className="flex-1">{t('transactions.filterStatus')}</span>
+                    {statusLabel && (
+                      <span className="max-w-[90px] truncate text-[11px] text-muted-foreground">
+                        {statusLabel}
+                      </span>
+                    )}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuPortal>
+                    <DropdownMenuSubContent sideOffset={8} className="w-[200px] p-1">
+                      {[
+                        { value: '', label: t('transactions.filterStatusAll') },
+                        { value: 'planned', label: t('transactions.statusPlanned') },
+                        { value: 'pending', label: t('transactions.statusPending') },
+                        { value: 'posted', label: t('transactions.statusPosted') },
+                      ].map((opt) => (
+                        <DropdownMenuItem
+                          key={opt.value || 'all'}
+                          onSelect={() => onStatusChange(opt.value)}
+                          className={cn(
+                            'gap-2 rounded-sm px-2 py-1.5 text-[13px]',
+                            filterStatus === opt.value && 'bg-primary/5',
+                          )}
+                        >
+                          <span className="size-2.5 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-left">
+                            {opt.label}
+                          </span>
+                          {filterStatus === opt.value && (
                             <Check size={13} className="text-primary" />
                           )}
                         </DropdownMenuItem>
