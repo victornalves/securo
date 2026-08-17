@@ -880,13 +880,22 @@ async def _account_balance_at(
         current_bal = float(account.balance)
         if account.type == "credit_card":
             current_bal = -current_bal
-        # Subtract activity after cutoff to get the balance AT cutoff
+        # Subtract activity after cutoff to get the balance AT cutoff.
+        # Bounded at today on the upper end: the provider balance describes
+        # *now*, so only transactions between the cutoff and today were
+        # applied to it. Without that bound a future-dated row is walked
+        # back too, and since a debit contributes a negative delta,
+        # subtracting it *inflates* today's balance by its amount.
+        # For a cutoff at or after today the window is empty and the
+        # provider balance is returned unchanged — future days belong to
+        # the projection layer, not here.
         # Exclude ignored transactions from balance calculation
         delta_after = await session.scalar(
             select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
             .where(
                 Transaction.account_id == account.id,
                 Transaction.date > cutoff,
+                Transaction.date <= date.today(),
                 Transaction.is_ignored == False,
             )
         )

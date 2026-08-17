@@ -189,6 +189,60 @@ async def test_account_balance_at_credit_card_connected(session: AsyncSession, t
     assert bal == pytest.approx(-2000.0)
 
 
+@pytest.mark.asyncio
+async def test_account_balance_at_connected_ignores_future_dated(
+    session: AsyncSession, test_user, test_connection
+):
+    """A future-dated row must not move a connected account's current balance.
+
+    The provider balance describes today, so the back-solve may only walk
+    back over transactions up to today. Without the upper bound the future
+    debit is subtracted as a negative delta, *inflating* the balance.
+    """
+    account = await _make_account(
+        session, test_user.id, "Future Bal", balance="5000.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 500, "debit", today + timedelta(days=1))
+
+    bal = await _account_balance_at(session, account, today)
+    assert bal == pytest.approx(5000.0)  # not 5500
+
+
+@pytest.mark.asyncio
+async def test_account_balance_at_connected_past_delta_still_subtracted(
+    session: AsyncSession, test_user, test_connection
+):
+    """The upper bound must not break the back-solve for past activity."""
+    account = await _make_account(
+        session, test_user.id, "Mixed Bal", balance="5000.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    # Between cutoff and today — still walked back.
+    await _add_txn(session, test_user.id, account.id, 300, "credit", today)
+    # After today — must be ignored.
+    await _add_txn(session, test_user.id, account.id, 500, "debit", today + timedelta(days=1))
+
+    bal = await _account_balance_at(session, account, today - timedelta(days=1))
+    assert bal == pytest.approx(4700.0)
+
+
+@pytest.mark.asyncio
+async def test_account_balance_at_manual_ignores_future_dated(
+    session: AsyncSession, test_user
+):
+    """The manual branch already bounds by cutoff — guard against regression."""
+    account = await _make_account(session, test_user.id, "Manual Future", balance="0.00")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 1000, "credit", today - timedelta(days=1))
+    await _add_txn(session, test_user.id, account.id, 500, "debit", today + timedelta(days=1))
+
+    bal = await _account_balance_at(session, account, today)
+    assert bal == pytest.approx(1000.0)
+
+
 # ---------------------------------------------------------------------------
 # _total_balance_by_currency
 # ---------------------------------------------------------------------------
