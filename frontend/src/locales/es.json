@@ -283,7 +283,9 @@
     "fxRateUsed": "Tipo de cambio: {{rate}}",
     "refreshRates": "Actualizar tipos FX",
     "ratesRefreshed": "Tipos FX actualizados",
-    "ratesError": "No se pudo actualizar los tipos FX"
+    "ratesError": "No se pudo actualizar los tipos FX",
+    "includePlanned": "Incluir planificados",
+    "includePlannedHint": "Suma los compromisos planificados a los totales. Los saldos nunca los incluyen."
   },
   "transactions": {
     "title": "Transacciones",
@@ -492,7 +494,17 @@
     "bulkAddTags": "Añadir etiquetas",
     "bulkRemoveTags": "Eliminar etiquetas",
     "addTagsPlaceholder": "#etiqueta…",
-    "clearOverride": "Borrar anulación"
+    "clearOverride": "Borrar anulación",
+    "plannedLabel": "Planificado — aún no ha ocurrido",
+    "plannedHint": "Queda fuera de saldos y de gastos realizados. Se activa por defecto en fechas futuras.",
+    "statusPlanned": "Planificado",
+    "plannedBadge": "Planificado",
+    "promoteAction": "Marcar como realizado",
+    "filterStatus": "Estado",
+    "filterStatusAll": "Todos los estados",
+    "overduePlanned": "Planificados vencidos",
+    "overduePlannedHint": "Apuntes planificados cuya fecha ya pasó. Confírmalos o elimínalos.",
+    "overduePlannedEmpty": "Nada vencido."
   },
   "accounts": {
     "title": "Cuentas",
@@ -632,7 +644,9 @@
         "description": "Bancos de EE. UU. e internacionales vía SimpleFIN Bridge"
       }
     },
-    "reconnected": "Banco reconectado correctamente"
+    "reconnected": "Banco reconectado correctamente",
+    "committedCredit": "Crédito comprometido",
+    "plannedAmount": "Planificado"
   },
   "connections": {
     "settings": "Configuración de la conexión",

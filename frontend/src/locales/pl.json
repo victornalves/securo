@@ -289,7 +289,9 @@
     "fxRateUsed": "Kurs FX: {{rate}}",
     "refreshRates": "Odśwież kursy FX",
     "ratesRefreshed": "Zaktualizowano kursy FX",
-    "ratesError": "Nie udało się zaktualizować kursów FX"
+    "ratesError": "Nie udało się zaktualizować kursów FX",
+    "includePlanned": "Uwzględnij zaplanowane",
+    "includePlannedHint": "Dolicza zaplanowane zobowiązania do sum. Salda nigdy ich nie zawierają."
   },
   "transactions": {
     "title": "Transakcje",
@@ -519,7 +521,17 @@
     "bulkAddTags": "Dodaj tagi",
     "bulkRemoveTags": "Usuń tagi",
     "addTagsPlaceholder": "#tag…",
-    "clearOverride": "Wyczyść nadpisanie"
+    "clearOverride": "Wyczyść nadpisanie",
+    "plannedLabel": "Zaplanowane — jeszcze nie nastąpiło",
+    "plannedHint": "Pomijane w saldach i zrealizowanych wydatkach. Domyślnie włączone dla dat przyszłych.",
+    "statusPlanned": "Zaplanowane",
+    "plannedBadge": "Zaplanowane",
+    "promoteAction": "Oznacz jako zrealizowane",
+    "filterStatus": "Stan",
+    "filterStatusAll": "Wszystkie stany",
+    "overduePlanned": "Zaległe zaplanowane",
+    "overduePlannedHint": "Zaplanowane pozycje, których data minęła. Potwierdź lub usuń.",
+    "overduePlannedEmpty": "Brak zaległych."
   },
   "accounts": {
     "title": "Konta",
@@ -668,7 +680,9 @@
         "description": "Banki w USA i międzynarodowe przez SimpleFIN Bridge"
       }
     },
-    "reconnected": "Bank połączony ponownie"
+    "reconnected": "Bank połączony ponownie",
+    "committedCredit": "Zajęty limit",
+    "plannedAmount": "Zaplanowane"
   },
   "connections": {
     "settings": "Ustawienia połączenia",

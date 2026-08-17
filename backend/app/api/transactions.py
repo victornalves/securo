@@ -1,7 +1,7 @@
 import csv
 import io
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -90,6 +90,10 @@ async def list_transactions(
     q: Optional[str] = Query(None),
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
+    status: Optional[List[str]] = Query(
+        None,
+        description="Filter by state (planned|pending|posted); repeatable. Omitted returns all.",
+    ),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500),
     include_opening_balance: bool = Query(False),
@@ -111,6 +115,7 @@ async def list_transactions(
         payee_id=payee_id, from_date=from_date, to_date=to_date, page=page, limit=limit,
         include_opening_balance=include_opening_balance, search=q, uncategorized=uncategorized,
         txn_type=type, exclude_transfers=exclude_transfers,
+        statuses=status,
         user_pnl_only=user_pnl_only,
         accounting_mode=accounting_mode,
         tags=tags,
@@ -351,6 +356,47 @@ async def get_transfer_candidates(
         _tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency)
         for tx in candidates
     ]
+
+
+class OverduePlanned(BaseModel):
+    """Planned rows whose date has passed without being promoted.
+
+    These exist because promotion is manual (spec D2) and sync inserts a
+    second row rather than merging (T7). A forgotten planned entry therefore
+    double-counts whenever the include-planned preference is on — this
+    endpoint is what makes that state visible instead of showing up as a
+    total the user can't explain.
+    """
+    count: int
+    items: list[TransactionRead]
+
+
+@router.get("/planned/overdue", response_model=OverduePlanned)
+async def list_overdue_planned(
+    limit: int = Query(50, ge=1, le=500),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    transactions, total, _ = await transaction_service.get_transactions(
+        session, ctx.workspace.id, ctx.user_id,
+        statuses=["planned"],
+        to_date=date.today() - timedelta(days=1),
+        limit=limit,
+        # Deliberately cash mode, not the global setting: "overdue" is about
+        # the commitment date the user entered, not the invoice cycle a
+        # credit-card purchase settles in. Under accrual, a planned purchase
+        # would only look overdue once its *bill* came due, which is weeks
+        # after the user expected to confirm it.
+        accounting_mode="cash",
+    )
+    primary_currency = ctx.user.primary_currency
+    items = [
+        _tag_fx_fallback(
+            TransactionRead.model_validate(tx, from_attributes=True), primary_currency
+        )
+        for tx in transactions
+    ]
+    return OverduePlanned(count=total, items=items)
 
 
 @router.get("/{transaction_id}", response_model=TransactionRead)

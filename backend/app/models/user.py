@@ -44,3 +44,14 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         """Return the user's configured primary currency."""
         from app.core.config import get_settings
         return (self.preferences or {}).get("currency_display", get_settings().default_currency)
+
+    @property
+    def include_planned(self) -> bool:
+        """Whether aggregate figures should fold in planned transactions.
+
+        Governs computed figures only — never which rows appear in a list.
+        Defaults to False so an unset preference excludes planned, which is
+        the safe direction: a future commitment is not something already
+        spent. See planning/002-planned-transactions.
+        """
+        return bool((self.preferences or {}).get("include_planned", False))

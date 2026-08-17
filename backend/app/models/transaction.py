@@ -42,7 +42,14 @@ class Transaction(Base):
     effective_date: Mapped[_date] = mapped_column(Date, index=True)
     type: Mapped[str] = mapped_column(String(10))  # debit, credit
     source: Mapped[str] = mapped_column(String(20))  # sync, ofx, csv, manual
-    status: Mapped[str] = mapped_column(String(10), default="posted")  # posted, pending
+    # posted   — settled; the money has moved.
+    # pending  — real but not yet settled. Provider-owned: set from the
+    #            sync payload and reconciled to `posted` by the sync layer.
+    # planned  — hasn't happened yet; a commitment the user recorded (a
+    #            future instalment, next month's bill). Never written by a
+    #            provider, and excluded from anything describing what
+    #            already happened. See planning/002-planned-transactions.
+    status: Mapped[str] = mapped_column(String(10), default="posted")
     payee: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     payee_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("payees.id", ondelete="SET NULL"), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)

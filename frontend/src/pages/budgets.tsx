@@ -21,6 +21,7 @@ import { format } from 'date-fns'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { MonthPicker } from '@/components/ui/monthpicker'
 import { PageHeader } from '@/components/page-header'
+import { IncludePlannedToggle } from '@/components/include-planned-toggle'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -135,7 +136,9 @@ export default function BudgetsPage() {
         section={t('budgets.title')}
         title={monthTitle}
         action={
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <IncludePlannedToggle />
+            <div className="flex items-center gap-1">
             <button
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
               onClick={() => {
@@ -174,6 +177,7 @@ export default function BudgetsPage() {
                 setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
               }}
             >›</button>
+            </div>
           </div>
         }
       />

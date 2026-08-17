@@ -117,6 +117,7 @@ async def get_transactions(
     account_types: Optional[list[str]] = None,
     include_summary: bool = False,
     user_pnl_only: bool = False,
+    statuses: Optional[list[str]] = None,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
     """List transactions for a workspace.
 
@@ -253,6 +254,12 @@ async def get_transactions(
         base_query = base_query.where(Account.is_closed == False, counts_as_user_pnl())
     if txn_type:
         base_query = base_query.where(Transaction.type == txn_type)
+
+    # Visibility only. The include-planned *preference* governs computed
+    # figures and must never reach this query — a list's contents are
+    # identical in both preference states (spec D3).
+    if statuses:
+        base_query = base_query.where(Transaction.status.in_(statuses))
     if currency:
         # Native-currency filter — match the column verbatim. Lets agents
         # answer "do I have any EUR transactions?" without text-searching
@@ -701,6 +708,7 @@ async def create_transaction(
         date=data.date,
         type=data.type,
         source="manual",
+        status=data.status,
         notes=data.notes,
         effective_bill_date=data.effective_bill_date,
     )

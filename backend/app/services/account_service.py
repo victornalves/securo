@@ -13,7 +13,13 @@ from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
 from app.services._query_filters import counts_as_pnl
-from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
+from app.services._query_filters import is_realized
+from app.services.credit_card_service import (
+    apply_effective_date,
+    compute_available_credit,
+    compute_committed_credit,
+    get_cycle_dates,
+)
 from app.models.category import Category
 
 
@@ -64,6 +70,7 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.is_ignored == False,
+            is_realized(),
             or_(
                 Transaction.category_id.is_(None),
                 Category.is_ignored == False,
@@ -87,10 +94,25 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
         .where(
             Transaction.date <= prev_month_end,
             Transaction.is_ignored == False,
+            is_realized(),
             or_(
                 Transaction.category_id.is_(None),
                 Category.is_ignored == False,
             ),
+        )
+        .group_by(Transaction.account_id)
+        .subquery()
+    )
+
+    planned_sq = (
+        select(
+            Transaction.account_id,
+            func.coalesce(func.sum(Transaction.amount), 0).label("planned_total"),
+        )
+        .where(
+            Transaction.status == "planned",
+            Transaction.type == "debit",
+            Transaction.is_ignored == False,
         )
         .group_by(Transaction.account_id)
         .subquery()
@@ -103,10 +125,12 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
             BankConnection,
             func.coalesce(balance_sq.c.current_balance, 0).label("current_balance"),
             func.coalesce(prev_balance_sq.c.previous_balance, 0).label("previous_balance"),
+            func.coalesce(planned_sq.c.planned_total, 0).label("planned_total"),
         )
         .outerjoin(BankConnection)
         .outerjoin(balance_sq, Account.id == balance_sq.c.account_id)
         .outerjoin(prev_balance_sq, Account.id == prev_balance_sq.c.account_id)
+        .outerjoin(planned_sq, Account.id == planned_sq.c.account_id)
         .where(
             or_(
                 Account.workspace_id == workspace_id,
@@ -119,8 +143,12 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     query = query.order_by(Account.name)
     result = await session.execute(query)
     return [
-            serialize_account(acc, current_balance, previous_balance, connection)
-            for acc, connection, current_balance, previous_balance in result.all()
+            serialize_account(
+                acc, current_balance, previous_balance, connection,
+                planned_total=planned_total,
+            )
+            for acc, connection, current_balance, previous_balance, planned_total
+            in result.all()
         ]
 
 
@@ -135,6 +163,7 @@ def serialize_account(
     current_balance: Optional[Decimal],
     previous_balance: Optional[Decimal],
     connection: Optional[BankConnection] = None,
+    planned_total: Optional[Decimal] = None,
 ) -> dict:
     # Connected CC: provider stores positive for debt → negate.
     # Manual accounts: transaction math already gives correct sign.
@@ -167,13 +196,21 @@ def serialize_account(
         "institution_name": _institution_name(connection),
         "institution_logo_url": connection.logo_url if connection else None,
         "available_credit": None,
+        "committed_credit": None,
+        "planned_amount": None,
         "next_close_date": None,
         "next_due_date": None,
     }
 
     if acc.type == "credit_card":
+        planned = Decimal(str(planned_total or 0))
         available = compute_available_credit(acc.credit_limit, Decimal(str(resolved_balance)))
         payload["available_credit"] = float(available) if available is not None else None
+        payload["planned_amount"] = float(planned)
+        committed = compute_committed_credit(
+            acc.credit_limit, Decimal(str(resolved_balance)), planned,
+        )
+        payload["committed_credit"] = float(committed) if committed is not None else None
         cycle = get_cycle_dates(acc.statement_close_day, acc.payment_due_day)
         payload["next_close_date"] = cycle["next_close_date"]
         payload["next_due_date"] = cycle["next_due_date"]
@@ -622,6 +659,7 @@ async def get_account_summary(
     date_from: Optional[_Date] = None, date_to: Optional[_Date] = None,
     bill_id: Optional[uuid.UUID] = None,
     unbilled_only: bool = False,
+    include_planned: bool = False,
 ) -> Optional[dict]:
     account = await get_account(session, account_id, workspace_id)
     if not account:
@@ -749,7 +787,7 @@ async def get_account_summary(
             Transaction.account_id == account_id,
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
-            counts_as_pnl(),
+            counts_as_pnl(include_planned),
         ))
     )
     monthly_income = float(income_result.scalar())
@@ -768,7 +806,7 @@ async def get_account_summary(
             _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
-                counts_as_pnl(),
+                counts_as_pnl(include_planned),
             ))
         )
     else:
@@ -776,7 +814,7 @@ async def get_account_summary(
             _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
                 Transaction.account_id == account_id,
                 Transaction.type == "debit",
-                counts_as_pnl(),
+                counts_as_pnl(include_planned),
             ))
         )
     monthly_expenses = float(expenses_result.scalar())
