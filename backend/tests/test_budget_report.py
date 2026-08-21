@@ -148,7 +148,7 @@ async def test_month_without_envelope_counts_as_zero(
     ])
     await session.commit()
 
-    rows, out_of_budget = await get_budget_window_totals(
+    rows, out_of_budget, _ = await get_budget_window_totals(
         session, test_workspace.id, test_user.id,
         _months((2025, 1), (2025, 2), (2025, 3), (2025, 4), (2025, 5), (2025, 6)),
         date(2025, 1, 1), date(2025, 7, 1),
@@ -175,7 +175,7 @@ async def test_envelope_change_tracks_month_by_month(
         date(2025, 5, 1), is_recurring=True,
     )
 
-    rows, _ = await get_budget_window_totals(
+    rows, _, _ = await get_budget_window_totals(
         session, test_workspace.id, test_user.id,
         _months((2025, 1), (2025, 2), (2025, 3), (2025, 4), (2025, 5), (2025, 6)),
         date(2025, 1, 1), date(2025, 7, 1),
@@ -202,7 +202,7 @@ async def test_zero_and_missing_envelopes_are_not_rows(
     ])
     await session.commit()
 
-    rows, out_of_budget = await get_budget_window_totals(
+    rows, out_of_budget, _ = await get_budget_window_totals(
         session, test_workspace.id, test_user.id,
         _months((2025, 3)), date(2025, 3, 1), date(2025, 4, 1),
     )
@@ -223,7 +223,7 @@ async def test_out_of_budget_includes_uncategorized_spending(
     ])
     await session.commit()
 
-    rows, out_of_budget = await get_budget_window_totals(
+    rows, out_of_budget, _ = await get_budget_window_totals(
         session, test_workspace.id, test_user.id,
         _months((2025, 3)), date(2025, 3, 1), date(2025, 4, 1),
     )
@@ -396,7 +396,10 @@ async def test_budget_report_endpoint_returns_payload(client, auth_headers, test
     assert response.status_code == 200
     payload = response.json()
     assert set(payload) == {"rows", "summary", "meta"}
-    assert set(payload["summary"]) == {"budgeted", "realized", "balance", "out_of_budget"}
+    assert set(payload["summary"]) == {
+        "budgeted", "realized", "planned", "balance", "committed_balance",
+        "out_of_budget", "out_of_budget_planned",
+    }
 
 
 @pytest.mark.asyncio

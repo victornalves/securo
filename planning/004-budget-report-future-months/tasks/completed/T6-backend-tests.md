@@ -4,7 +4,7 @@
 | ---------- | -------------- |
 | Task       | T6             |
 | Feature    | 004            |
-| Status     | Todo           |
+| Status     | Done           |
 | Depends on | T2, T3, T4, T5 |
 | PR         |                |
 | Jira       | —              |
@@ -49,3 +49,16 @@ Run the full suite: it was 2422 passed / 7 skipped at the close of 002, and Ruff
 ## Done when
 
 Every bullet of the spec's **Cross-cutting** test criterion is covered and the suite is green.
+
+## Notes
+
+**Outcome.** `tests/test_budget_report_future_months.py`, 20 tests, all green. Full suite:
+**2484 passed, 7 skipped**, Ruff clean.
+
+One deviation from the plan: the `/budgets` guard test
+(`test_budgets_screen_keeps_its_own_semantics`) pins the paths this feature actually touched —
+`actual` follows the preference in both states, and projections still count — rather than
+building a group-split and own-split fixture. Split behaviour under `/budgets` is already
+covered by the existing suite (`test_planned_transactions_coverage.py` and the budget tests),
+and the full-suite run is the real regression guard for the `planned_scope=None` default. Worth
+knowing that the narrower test is what exists here.

@@ -62,6 +62,10 @@ class ReportResponse(BaseModel):
 
 class ReportBoundsResponse(BaseModel):
     earliest_month: str | None
+    # Furthest month the budget report may be navigated to: the user's own
+    # furthest commitment, floored at the current month and capped 12 months
+    # out. Never null — the floor guarantees a value.
+    latest_month: str
 
 
 class BudgetReportRow(BaseModel):
@@ -71,18 +75,25 @@ class BudgetReportRow(BaseModel):
     category_color: str
     group_name: str | None = None
     budgeted: float          # sum of each month's effective envelope in the window
-    realized: float          # spending over the window, /budgets semantics
-    difference: float        # budgeted - realized; positive = room left
-    percentage_used: float | None   # realized / budgeted * 100; None when budgeted == 0
+    realized: float          # spending that happened, /budgets semantics
+    planned: float           # recorded commitments that have not happened yet
+    # `difference` and `percentage_used` are on the *committed* basis
+    # (realized + planned): an envelope with room left only for as long as the
+    # commitments against it are ignored has no room left.
+    difference: float        # budgeted - (realized + planned); positive = room left
+    percentage_used: float | None   # committed / budgeted * 100; None when budgeted == 0
     months_in_window: int
     months_budgeted: int
 
 
 class BudgetReportSummary(BaseModel):
     budgeted: float
-    realized: float          # budgeted categories only
-    balance: float           # budgeted - realized
-    out_of_budget: float
+    realized: float               # budgeted categories only
+    planned: float                # budgeted categories only
+    balance: float                # budgeted - realized
+    committed_balance: float      # budgeted - realized - planned
+    out_of_budget: float          # realized spending outside every envelope
+    out_of_budget_planned: float  # planned spending outside every envelope
 
 
 class BudgetReportMeta(BaseModel):

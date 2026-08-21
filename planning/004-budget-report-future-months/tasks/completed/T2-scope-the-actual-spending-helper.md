@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T2    |
 | Feature    | 004   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T1    |
 | PR         |       |
 | Jira       | —     |
@@ -63,3 +63,15 @@ occurrences** block.
 Verified by: for the same window, the `"realized"` and `"planned"` passes partition what the
 `None` pass returns with `include_planned=True`, *except* for projections dated after today,
 which appear only in the `None` pass. One test per row of that statement.
+
+## Notes
+
+**Outcome.** All four steps take the scope. Step 4 reads as planned: `if planned_scope !=
+"planned"` guards the whole block, and inside it `planned_scope == "realized" and
+proj["date"] > today` skips future occurrences. `planned_scope=None` leaves the loop exactly as
+it was.
+
+The pair of tests that makes this non-vacuous: `test_past_projection_still_counts_as_realized`
+proves projections still reach the report through this step, and
+`test_future_projection_alone_contributes_nothing` proves the date filter drops the future ones.
+One without the other would pass on broken code.

@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T5    |
 | Feature    | 004   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | —     |
 | PR         |       |
 | Jira       | —     |
@@ -60,3 +60,10 @@ Satisfies the four `latest_month` criteria in the spec's **Forward navigation** 
 Verified by: no planned rows → current month; a planned row three months out → that month; one
 30 months out → capped at +12; a planned credit-card row whose `effective_bill_date` falls in a
 later month → the later month; an `is_ignored` planned row → does not extend the bound.
+
+## Notes
+
+**Outcome.** `_MAX_FORWARD_MONTHS = 12` and `get_latest_planned_month` in `report_service`,
+bucketed by `reporting_date_col` and filtered by `counts_as_user_pnl(planned_scope="planned")`.
+`latest_month` is non-null on `ReportBoundsResponse`. Five tests cover the derivation, including
+the bill-month case and the `is_ignored` exclusion.

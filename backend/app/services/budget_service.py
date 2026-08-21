@@ -230,6 +230,7 @@ async def _actual_spending_by_category(
     accounting_mode: str,
     include_uncategorized: bool = False,
     include_planned: bool = False,
+    planned_scope: Optional[str] = None,
 ) -> dict[Optional[str], Decimal]:
     """Realized spending per category over ``[start, end)``, in primary currency.
 
@@ -239,6 +240,12 @@ async def _actual_spending_by_category(
 
     Keys are ``str(category_id)``. With ``include_uncategorized``, spending
     with no category is kept under the ``None`` key instead of being dropped.
+
+    ``planned_scope`` ("realized" | "planned") narrows the pass to one
+    transaction state, ignoring ``include_planned``, so the budget report can
+    ask for each state separately (planning/004, D2). It also changes step 4:
+    a virtual recurring occurrence dated after today is not a commitment the
+    user recorded, so it counts nowhere (D3).
     """
     report_date = reporting_date_col(accounting_mode)
     use_effective_date = accounting_mode == "accrual"
@@ -250,7 +257,7 @@ async def _actual_spending_by_category(
         Transaction.type == "debit",
         report_date >= start,
         report_date < end,
-        counts_as_user_pnl(include_planned),
+        counts_as_user_pnl(include_planned, planned_scope),
     ]
     if not include_uncategorized:
         conditions.append(Transaction.category_id.isnot(None))
@@ -274,6 +281,7 @@ async def _actual_spending_by_category(
         primary_currency=primary_currency,
         workspace_id=workspace_id,
         include_planned=include_planned,
+        planned_scope=planned_scope,
     )
     for cat_uuid, total in own_offset.items():
         if cat_uuid is None and not include_uncategorized:
@@ -293,6 +301,7 @@ async def _actual_spending_by_category(
         use_effective_date=use_effective_date,
         primary_currency=primary_currency,
         include_planned=include_planned,
+        planned_scope=planned_scope,
     )
     for cat_uuid, total in shared_by_cat.items():
         if cat_uuid is None and not include_uncategorized:
@@ -301,17 +310,28 @@ async def _actual_spending_by_category(
         spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
 
     # 4. Add projected recurring transactions (converted to primary currency).
-    projections = await _get_recurring_projections(session, workspace_id, start, end)
-    for proj in projections:
-        if proj["type"] != "debit":
-            continue
-        if not proj["category_id"] and not include_uncategorized:
-            continue
-        cat_id = str(proj["category_id"]) if proj["category_id"] else None
-        converted, _ = await convert(
-            session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
-        )
-        spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + converted
+    #    A projection is virtual: nothing was recorded, so under `planned_scope`
+    #    it can only ever describe the realized side, and only up to today. Its
+    #    future occurrences are a forecast, not a commitment the user made, and
+    #    the budget report counts recorded commitments only (planning/004, D3).
+    #    Occurrences on or before today still count: rules with
+    #    `auto_generate=false` are projected instead of materialized, and
+    #    dropping them would lose their past spending.
+    if planned_scope != "planned":
+        today = date.today()
+        projections = await _get_recurring_projections(session, workspace_id, start, end)
+        for proj in projections:
+            if proj["type"] != "debit":
+                continue
+            if planned_scope == "realized" and proj["date"] > today:
+                continue
+            if not proj["category_id"] and not include_uncategorized:
+                continue
+            cat_id = str(proj["category_id"]) if proj["category_id"] else None
+            converted, _ = await convert(
+                session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+            )
+            spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + converted
 
     return spending_map
 
@@ -414,6 +434,7 @@ class CategoryWindowTotals:
     group_name: Optional[str]
     budgeted: Decimal
     realized: Decimal
+    planned: Decimal
     months_budgeted: int
 
 
@@ -424,9 +445,9 @@ async def get_budget_window_totals(
     months: list[date],
     start: date,
     end: date,
-) -> tuple[list[CategoryWindowTotals], Decimal]:
+) -> tuple[list[CategoryWindowTotals], Decimal, Decimal]:
     """Envelopes and spending over ``[start, end)``, split into budgeted
-    categories and one out-of-budget total.
+    categories and the out-of-budget totals.
 
     ``months`` is the list of first-of-month dates the window covers, passed in
     rather than derived here: window semantics belong to the caller, and the
@@ -435,7 +456,14 @@ async def get_budget_window_totals(
     A category earns a row when its envelopes over the window sum to more than
     zero; a month with no envelope simply contributes nothing. Everything else
     — never budgeted, budgeted only at zero, and uncategorized spending — is
-    summed into the second return value.
+    summed into the two out-of-budget return values.
+
+    Realized and planned spending are returned separately, and neither depends
+    on the user's *include planned* preference: one figure cannot mean "spent"
+    in a past month and "committed" in a future one, and a preference must not
+    be able to make a future month read as empty (planning/004, D2). Folding
+    the two together is the caller's decision, taken where the preference is
+    known.
     """
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
@@ -454,23 +482,33 @@ async def get_budget_window_totals(
             if amount > 0:
                 months_budgeted[cat_id] = months_budgeted.get(cat_id, 0) + 1
 
-    # Spending in one pass over the whole window, not month by month.
-    spending_map = await _actual_spending_by_category(
+    # Spending in one pass per state over the whole window, not month by month.
+    realized_map = await _actual_spending_by_category(
         session, workspace_id, user_id, start, end,
         primary_currency, accounting_mode,
         include_uncategorized=True,
-        include_planned=user.include_planned if user else False,
+        planned_scope="realized",
+    )
+    planned_map = await _actual_spending_by_category(
+        session, workspace_id, user_id, start, end,
+        primary_currency, accounting_mode,
+        include_uncategorized=True,
+        planned_scope="planned",
     )
 
     budgeted_ids = {cat_id for cat_id, amount in budgeted.items() if amount > 0}
 
     out_of_budget = Decimal("0")
-    for cat_id, amount in spending_map.items():
+    out_of_budget_planned = Decimal("0")
+    for cat_id, amount in realized_map.items():
         if cat_id not in budgeted_ids:
             out_of_budget += amount
+    for cat_id, amount in planned_map.items():
+        if cat_id not in budgeted_ids:
+            out_of_budget_planned += amount
 
     if not budgeted_ids:
-        return [], out_of_budget
+        return [], out_of_budget, out_of_budget_planned
 
     cats_result = await session.execute(
         select(Category, CategoryGroup)
@@ -486,11 +524,12 @@ async def get_budget_window_totals(
             category_color=category.color,
             group_name=group.name if group else None,
             budgeted=budgeted[str(category.id)],
-            realized=spending_map.get(str(category.id), Decimal("0")),
+            realized=realized_map.get(str(category.id), Decimal("0")),
+            planned=planned_map.get(str(category.id), Decimal("0")),
             months_budgeted=months_budgeted.get(str(category.id), 0),
         )
         for category, group in cats_result.all()
         if str(category.id) in budgeted_ids
     ]
 
-    return rows, out_of_budget
+    return rows, out_of_budget, out_of_budget_planned

@@ -55,6 +55,29 @@ def is_realized():
     return Transaction.status != "planned"
 
 
+PLANNED_SCOPES = ("realized", "planned")
+
+
+def _status_terms(include_planned: bool, planned_scope: Optional[str]) -> list:
+    """Which transaction states an aggregation counts.
+
+    `planned_scope` *overrides* `include_planned` when given: the budget
+    report needs each state on its own, in every month, regardless of the
+    user's preference (planning/004, D2). Only that report passes it — with
+    `None` the terms are exactly what the preference alone produced, which
+    is what keeps /budgets, the dashboard and per-account stats unmoved.
+    """
+    if planned_scope is None:
+        return [] if include_planned else [Transaction.status != "planned"]
+    if planned_scope == "planned":
+        return [Transaction.status == "planned"]
+    if planned_scope == "realized":
+        return [Transaction.status != "planned"]
+    raise ValueError(
+        f"unknown planned_scope: {planned_scope!r} (expected one of {PLANNED_SCOPES})"
+    )
+
+
 def counts_as_realized():
     """`counts_as_pnl` restricted to what actually happened.
 
@@ -65,7 +88,7 @@ def counts_as_realized():
     return and_(counts_as_pnl(), is_realized())
 
 
-def counts_as_pnl(include_planned: bool = False):
+def counts_as_pnl(include_planned: bool = False, planned_scope: Optional[str] = None):
     """SQL filter: True when a transaction should contribute to income/expense totals.
 
     Excludes:
@@ -82,6 +105,9 @@ def counts_as_pnl(include_planned: bool = False):
     under-reports rather than counting a future commitment as already spent
     — the safe direction to fail in.
 
+    `planned_scope` ("realized" | "planned") selects one state instead and
+    ignores the preference — see `_status_terms`.
+
     Does NOT exclude `source='opening_balance'` — callers that already
     filter those keep doing so; this helper only handles the transfer-like
     exclusion family so both rules stay visible at each call site.
@@ -89,7 +115,7 @@ def counts_as_pnl(include_planned: bool = False):
     return and_(
         Transaction.transfer_pair_id.is_(None),
         Transaction.is_ignored.is_(False),
-        *([] if include_planned else [Transaction.status != "planned"]),
+        *_status_terms(include_planned, planned_scope),
         # Settlement *debits* are repayments of debts that were already
         # booked as an expense via the share. Counting them would
         # double-count. Settlement *credits*, however, represent the
@@ -111,7 +137,7 @@ def counts_as_pnl(include_planned: bool = False):
     )
 
 
-def counts_as_user_pnl(include_planned: bool = False):
+def counts_as_user_pnl(include_planned: bool = False, planned_scope: Optional[str] = None):
     """SQL filter for *user-level* P/L (dashboard, reports, budgets).
 
     Stricter than `counts_as_pnl`: also drops settlement *credits*. Under
@@ -121,7 +147,7 @@ def counts_as_user_pnl(include_planned: bool = False):
     track real cash through the account, not user P/L.
     """
     return and_(
-        counts_as_pnl(include_planned),
+        counts_as_pnl(include_planned, planned_scope),
         Transaction.source != "settlement",
     )
 
@@ -135,6 +161,7 @@ async def owner_split_offset_pnl(
     primary_currency: Optional[str] = None,
     workspace_id: Optional[uuid.UUID] = None,
     include_planned: bool = False,
+    planned_scope: Optional[str] = None,
 ) -> tuple[float, float]:
     """Return (income_offset, expense_offset) — the totals to *subtract*
     from the owner's full-amount aggregations so only their own share
@@ -190,7 +217,7 @@ async def owner_split_offset_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            counts_as_user_pnl(include_planned),
+            counts_as_user_pnl(include_planned, planned_scope),
         )
         .group_by(Transaction.currency)
     )
@@ -229,6 +256,7 @@ async def owner_split_offset_by_category(
     primary_currency: Optional[str] = None,
     workspace_id: Optional[uuid.UUID] = None,
     include_planned: bool = False,
+    planned_scope: Optional[str] = None,
 ) -> dict:
     """Per-category, sum of non-owner shares on owner-side debit splits —
     subtract from full owner debits to get the owner's category share."""
@@ -269,7 +297,7 @@ async def owner_split_offset_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            counts_as_user_pnl(include_planned),
+            counts_as_user_pnl(include_planned, planned_scope),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )
@@ -300,6 +328,7 @@ async def viewer_shared_pnl(
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
     include_planned: bool = False,
+    planned_scope: Optional[str] = None,
 ) -> tuple[float, float]:
     """Return (income, expense) totals contributed by transactions the
     viewer doesn't own but participates in via a group split.
@@ -352,7 +381,7 @@ async def viewer_shared_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            counts_as_pnl(include_planned),
+            counts_as_pnl(include_planned, planned_scope),
         )
         .group_by(Transaction.currency)
     )
@@ -394,6 +423,7 @@ async def viewer_shared_spending_by_category(
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
     include_planned: bool = False,
+    planned_scope: Optional[str] = None,
 ) -> dict:
     """Return {category_id (uuid|None): total_share_expense_float} for
     transactions where the viewer participates via a group split.
@@ -430,7 +460,7 @@ async def viewer_shared_spending_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            counts_as_pnl(include_planned),
+            counts_as_pnl(include_planned, planned_scope),
         )
         .group_by(Transaction.category_id, Transaction.currency)
     )

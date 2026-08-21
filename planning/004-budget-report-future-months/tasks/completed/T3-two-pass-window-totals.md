@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T3    |
 | Feature    | 004   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T2    |
 | PR         |       |
 | Jira       | —     |
@@ -61,3 +61,10 @@ half) and *"the same assertions with `include_planned` true and false → identi
 Verified by: a test that flips the user's `include_planned` preference and asserts the returned
 totals are byte-identical, and a test that a planned-only unbudgeted category lands in
 `out_of_budget_planned` and not in `rows`.
+
+## Notes
+
+**Outcome.** Two scoped passes, `CategoryWindowTotals.planned`, and the return became a
+3-tuple `(rows, out_of_budget, out_of_budget_planned)`. The `user.include_planned` read is gone;
+`user` is still fetched for `primary_currency`. Four call sites in
+`tests/test_budget_report.py` were updated for the new arity.

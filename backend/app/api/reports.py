@@ -54,7 +54,8 @@ async def get_report_bounds(
     session: AsyncSession = Depends(get_async_session),
 ):
     earliest = await report_service.get_earliest_transaction_month(session, ctx.workspace.id)
-    return ReportBoundsResponse(earliest_month=earliest)
+    latest = await report_service.get_latest_planned_month(session, ctx.workspace.id)
+    return ReportBoundsResponse(earliest_month=earliest, latest_month=latest)
 
 
 @router.get("/cash-flow", response_model=ReportResponse)

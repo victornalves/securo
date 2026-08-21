@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T4    |
 | Feature    | 004   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T3    |
 | PR         |       |
 | Jira       | —     |
@@ -70,3 +70,9 @@ Satisfies the **Numbers** criteria for the response shape, and *"An `anchor_mont
 
 Verified by: an endpoint test on a future anchor month asserting every new field, and one on a
 month past the +12 cap returning 200 with envelopes and zero commitments.
+
+## Notes
+
+**Outcome.** As planned. Ordering stays on realized descending. The endpoint test's
+`set(payload["summary"])` assertion in `tests/test_budget_report.py` was extended with the three
+new keys.

@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T1    |
 | Feature    | 004   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | —     |
 | PR         |       |
 | Jira       | —     |
@@ -73,3 +73,12 @@ The three scopes produce the expected SQL predicates, and a test asserts that om
 
 Verified by: unit tests over `counts_as_pnl` / `counts_as_user_pnl` for each scope, plus one
 test asserting `ValueError` on an unknown scope.
+
+## Notes
+
+**Outcome.** `PLANNED_SCOPES` + `_status_terms(include_planned, planned_scope)` added to
+`_query_filters.py`; `counts_as_pnl` / `counts_as_user_pnl` splice its terms. `planned_scope`
+was added to all four async helpers in the family — `owner_split_offset_pnl`,
+`owner_split_offset_by_category`, `viewer_shared_pnl`, `viewer_shared_spending_by_category` —
+rather than only the two the report needs, so the family stays uniform; the two extra ones are
+pure pass-through with a `None` default. Unknown scopes raise `ValueError`.
