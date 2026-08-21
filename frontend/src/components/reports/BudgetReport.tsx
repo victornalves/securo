@@ -60,20 +60,28 @@ function truncate(label: string) {
  * end of the string at the tick and rotating about that same point keeps every
  * label under the bar it names.
  */
-function CategoryTick({ x, y, payload }: {
+function CategoryTick({ x, y, payload, data }: {
   x?: number
   y?: number
   payload?: { value?: string }
+  /** The rows behind the axis, so the label can say what its column cannot:
+   *  a category whose own colour is rose — Saúde, Educação — draws a rose
+   *  planned segment that reads as an overspend from across the room. A cue
+   *  outside the bar is the only one no category colour can imitate. */
+  data?: BudgetChartDatum[]
 }) {
+  const label = payload?.value ?? ''
+  const over = data?.find((datum) => datum.label === label)?.over ?? false
   return (
     <g transform={`translate(${x ?? 0},${(y ?? 0) + 10})`}>
       <text
         transform={`rotate(${LABEL_ANGLE})`}
         textAnchor="end"
         fontSize={11}
-        fill="var(--muted-foreground)"
+        fill={over ? OVER_BUDGET_COLOR : 'var(--muted-foreground)'}
+        fontWeight={over ? 600 : undefined}
       >
-        {truncate(payload?.value ?? '')}
+        {truncate(label)}
       </text>
     </g>
   )
@@ -150,9 +158,19 @@ function ExecutionSegment(props: {
 
   const capPx = Math.max(cap, 3)
   const withinHeight = Math.max(height - capPx - SURFACE_GAP, 0)
+  const crossing = y + capPx + SURFACE_GAP / 2
   return (
     <g>
       <Rectangle x={x} y={y} width={width} height={capPx} radius={radius} fill={capFill} />
+      {/* The envelope level, drawn in the gap. Without it the gap reads as a
+          rendering seam; with it the cap reads as the part above a line — which
+          is what a category coloured close to rose needs to stay legible. */}
+      {withinHeight > 0 && (
+        <line
+          x1={x} x2={x + width} y1={crossing} y2={crossing}
+          stroke={NEUTRAL} strokeWidth={1.25}
+        />
+      )}
       <Rectangle
         x={x} y={y + capPx + SURFACE_GAP} width={width} height={withinHeight}
         radius={0} fill={fill}
@@ -391,7 +409,7 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                 // when it is left to pick an interval.
                 interval={0}
                 height={AXIS_BAND}
-                tick={<CategoryTick />}
+                tick={<CategoryTick data={chartData} />}
               />
               <YAxis
                 tickFormatter={(value: number) => {

@@ -4,7 +4,7 @@
 | ------------ | ---------- |
 | ID           | 004        |
 | Status       | Approved   |
-| Version      | 0.2.0      |
+| Version      | 0.3.0      |
 | Spec         | ./spec.md  |
 | Last updated | 2026-08-20 |
 
@@ -174,6 +174,10 @@ frontend
 - **Consequences:** `RealizedBar`'s current proportional maths moves into a shared helper both
   shapes call, since neither segment can compute the cap from its own value alone. Zero-value
   segments must return `null` before dividing.
+- **Amended (v0.3.0, after manual QA):** the cap alone does not carry the signal for a category
+  whose *own* colour is rose — `Saúde`, `Educação` — whose planned stripes then look like an
+  overspend. Two cues no category colour can imitate were added in T13: the envelope level drawn
+  as a rule inside the gap, and the axis label turned rose for an over-budget category.
 
 ### Decision: clamp the month on tab change, don't give the Budget tab its own month state
 
@@ -333,5 +337,6 @@ filter still shows the notice.
 
 | Version | Date       | Author       | Change       |
 | ------- | ---------- | ------------ | ------------ |
+| 0.3.0   | 2026-08-20 | Victor Alves | Amend the overspend-cue ADR: the rose cap alone fails on a rose category (T13) |
 | 0.2.0   | 2026-08-20 | Victor Alves | Approved; no content change from the draft |
 | 0.1.0   | 2026-08-20 | Victor Alves | Initial plan |
