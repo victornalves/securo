@@ -12,6 +12,7 @@ work started) → Done (all tasks complete).
 
 | ID  | Type | Title | Docs | Owner | Jira |
 | --- | ---- | ----- | ---- | ----- | ---- |
+| 004 | Feature | Budget report future months | [spec](004-budget-report-future-months/spec.md) · [plan](004-budget-report-future-months/plan.md) · [tasks](004-budget-report-future-months/tasks/) | Victor Alves | — |
 | 003 | Feature | Budget report tab | [spec](003-budget-report-tab/spec.md) · [plan](003-budget-report-tab/plan.md) · [tasks](003-budget-report-tab/tasks/) | Victor Alves | — |
 
 ## Done
@@ -25,4 +26,4 @@ work started) → Done (all tasks complete).
 
 | ID  | Type | Title | Notes |
 | --- | ---- | ----- | ----- |
-| —   | —    | —     | —     |
+| 005 | Bug  | Future-dated manual rows stored as posted | Migration 066 (spec 002) scoped itself to `source='recurring'`, deliberately: manual rows had never had a way to express intent. Spec 004 made the consequence visible — 14 instalment rows dated 2026-09 to 2027-03 draw as *Realized* in a future month. Extend the reclassification to future-dated manual and imported rows, reversibly. Victor's own 14 rows are still `posted` as of 2026-08-21 — promoting them needs a write to the live database. This item is the general fix. |

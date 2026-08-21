@@ -1102,6 +1102,46 @@ async def get_earliest_transaction_month(
     return earliest.strftime("%Y-%m") if earliest else None
 
 
+# How far past the current month the budget report may be navigated. Recurring
+# envelopes resolve for any future month (`_build_budget_map` matches every
+# recurring row with `month <= M`), so without a cap the month stepper would
+# page forever through months holding envelopes and nothing else.
+_MAX_FORWARD_MONTHS = 12
+
+
+async def get_latest_planned_month(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> str:
+    """Furthest month the budget report may be navigated to, as `YYYY-MM`.
+
+    The user's own furthest recorded commitment, floored at the current month
+    and capped `_MAX_FORWARD_MONTHS` out (planning/004, D4).
+
+    Bucketed by `reporting_date_col`, not by raw `date`: a planned credit-card
+    instalment is *reported* in its bill month, so a bound taken from the
+    purchase date could stop short of the month that holds the very row which
+    made it reachable. The same predicate the report itself uses decides which
+    rows qualify — a row that could never appear on the tab must not extend the
+    bound either.
+    """
+    current = date.today().replace(day=1)
+    accounting_mode = await get_credit_card_accounting_mode(session)
+
+    result = await session.execute(
+        select(func.max(reporting_date_col(accounting_mode))).where(
+            Transaction.workspace_id == workspace_id,
+            counts_as_user_pnl(planned_scope="planned"),
+        )
+    )
+    furthest = result.scalar_one_or_none()
+
+    if furthest is None:
+        return current.strftime("%Y-%m")
+    cap = _add_months(current, _MAX_FORWARD_MONTHS)
+    latest = max(current, min(furthest.replace(day=1), cap.replace(day=1)))
+    return latest.strftime("%Y-%m")
+
+
 async def _get_baseline_projection(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1646,15 +1686,20 @@ async def get_budget_report(
         months_list.append(cursor)
         cursor = _add_months(cursor, 1)
 
-    totals, out_of_budget = await budget_service.get_budget_window_totals(
+    totals, out_of_budget, out_of_budget_planned = await budget_service.get_budget_window_totals(
         session, workspace_id, user_id, months_list,
         start, end_inclusive + timedelta(days=1),
     )
 
     rows: list[BudgetReportRow] = []
+    # Ordered by realized descending, not by committed: the chart's ordering
+    # criterion is what was actually spent, so a month's ranking does not
+    # reshuffle as commitments are recorded against it.
     for item in sorted(totals, key=lambda t: float(t.realized), reverse=True):
         budgeted = float(item.budgeted)
         realized = float(item.realized)
+        planned = float(item.planned)
+        committed = realized + planned
         rows.append(BudgetReportRow(
             category_id=item.category_id,
             category_name=item.category_name,
@@ -1663,22 +1708,27 @@ async def get_budget_report(
             group_name=item.group_name,
             budgeted=budgeted,
             realized=realized,
-            difference=budgeted - realized,
-            percentage_used=round(realized / budgeted * 100, 1) if budgeted > 0 else None,
+            planned=planned,
+            difference=budgeted - committed,
+            percentage_used=round(committed / budgeted * 100, 1) if budgeted > 0 else None,
             months_in_window=len(months_list),
             months_budgeted=item.months_budgeted,
         ))
 
     total_budgeted = sum(r.budgeted for r in rows)
     total_realized = sum(r.realized for r in rows)
+    total_planned = sum(r.planned for r in rows)
 
     return BudgetReportResponse(
         rows=rows,
         summary=BudgetReportSummary(
             budgeted=total_budgeted,
             realized=total_realized,
+            planned=total_planned,
             balance=total_budgeted - total_realized,
+            committed_balance=total_budgeted - total_realized - total_planned,
             out_of_budget=float(out_of_budget),
+            out_of_budget_planned=float(out_of_budget_planned),
         ),
         meta=BudgetReportMeta(
             currency=primary_currency,

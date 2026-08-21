@@ -770,9 +770,13 @@ export interface BudgetReportRow {
   group_name: string | null
   /** Sum of each month's effective envelope across the window. */
   budgeted: number
+  /** Spending that happened — never includes planned rows. */
   realized: number
-  /** budgeted - realized; positive means room left. */
+  /** Recorded commitments that have not happened yet. */
+  planned: number
+  /** budgeted - (realized + planned); positive means room left. */
   difference: number
+  /** (realized + planned) / budgeted * 100. */
   percentage_used: number | null
   months_in_window: number
   /** Of those months, how many resolved an envelope above zero. */
@@ -783,8 +787,14 @@ export interface BudgetReportSummary {
   budgeted: number
   /** Budgeted categories only — spending elsewhere is out_of_budget. */
   realized: number
+  /** Budgeted categories only, same rule as `realized`. */
+  planned: number
+  /** budgeted - realized. */
   balance: number
+  /** budgeted - realized - planned. */
+  committed_balance: number
   out_of_budget: number
+  out_of_budget_planned: number
 }
 
 export interface BudgetReportMeta {

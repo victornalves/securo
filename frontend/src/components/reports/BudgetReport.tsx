@@ -10,9 +10,12 @@ import {
   YAxis,
 } from 'recharts'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { currentMonth } from '@/lib/month-utils'
 import {
   buildBudgetChartData,
+  capHeight,
   chartWidth,
   OUT_OF_BUDGET_KEY,
   OVER_BUDGET_COLOR,
@@ -57,59 +60,119 @@ function truncate(label: string) {
  * end of the string at the tick and rotating about that same point keeps every
  * label under the bar it names.
  */
-function CategoryTick({ x, y, payload }: {
+function CategoryTick({ x, y, payload, data }: {
   x?: number
   y?: number
   payload?: { value?: string }
+  /** The rows behind the axis, so the label can say what its column cannot:
+   *  a category whose own colour is rose — Saúde, Educação — draws a rose
+   *  planned segment that reads as an overspend from across the room. A cue
+   *  outside the bar is the only one no category colour can imitate. */
+  data?: BudgetChartDatum[]
 }) {
+  const label = payload?.value ?? ''
+  const over = data?.find((datum) => datum.label === label)?.over ?? false
   return (
     <g transform={`translate(${x ?? 0},${(y ?? 0) + 10})`}>
       <text
         transform={`rotate(${LABEL_ANGLE})`}
         textAnchor="end"
         fontSize={11}
-        fill="var(--muted-foreground)"
+        fill={over ? OVER_BUDGET_COLOR : 'var(--muted-foreground)'}
+        fontWeight={over ? 600 : undefined}
       >
-        {truncate(payload?.value ?? '')}
+        {truncate(label)}
       </text>
     </g>
   )
 }
 
+/** One SVG pattern per *distinct* category colour, not one per column: with
+ *  20 categories the defs block would otherwise repeat itself. */
+function plannedPatternId(color: string) {
+  return `budgetPlanned-${color.replace(/[^a-zA-Z0-9]/g, '')}`
+}
+
+/** The rose stripe for commitments that overshoot the envelope. One def — the
+ *  overspend colour is the same whatever category broke. */
+const PLANNED_OVER_PATTERN = 'budgetPlannedOver'
+
+function PlannedPattern({ id, color }: { id: string; color: string }) {
+  return (
+    <pattern
+      id={id}
+      width={5} height={5}
+      patternTransform="rotate(-45)"
+      patternUnits="userSpaceOnUse"
+    >
+      <rect width={5} height={5} fill={color} fillOpacity={0.22} />
+      <line x1={0} y1={0} x2={0} y2={5} stroke={color} strokeWidth={2.2} />
+    </pattern>
+  )
+}
+
 /**
- * The realized column. Within-budget spending keeps the category's own colour;
- * anything past the envelope is capped in rose, separated by the surface gap.
+ * One segment of the execution column. Realized sits at the bottom in the
+ * category's own colour; planned stacks on top in the same hue, striped —
+ * hue is the identity channel and cannot be spent on state, so texture is what
+ * separates "spent" from "committed".
+ *
+ * Anything past the envelope is capped in rose, separated by the surface gap.
  * Repainting the whole bar would have thrown away the identity colour to say
  * something the cap says better — and says *how much* over, not just that.
+ * Which segment carries the cap depends on how deep the overshoot runs, so the
+ * geometry comes from the shared `capHeight` helper rather than from either
+ * segment's own value.
  */
-function RealizedBar(props: {
+function ExecutionSegment(props: {
   x?: number
   y?: number
   width?: number
   height?: number
   payload?: BudgetChartDatum
+  kind?: 'realized' | 'planned'
 }) {
-  const { x = 0, y = 0, width = 0, height = 0, payload } = props
+  const { x = 0, y = 0, width = 0, height = 0, payload, kind = 'realized' } = props
   if (!payload || height <= 0) return null
 
+  const isPlanned = kind === 'planned'
   const isOutOfBudget = payload.key === OUT_OF_BUDGET_KEY
-  const fill = isOutOfBudget ? 'url(#budgetOutOfBudgetHatch)' : payload.color
-  const budgeted = payload.budgeted ?? 0
+  const value = isPlanned ? payload.planned : payload.realized
 
-  if (!payload.over || budgeted <= 0) {
-    return <Rectangle x={x} y={y} width={width} height={height} radius={[4, 4, 0, 0]} fill={fill} />
+  const fill = isPlanned
+    ? `url(#${plannedPatternId(payload.color)})`
+    : isOutOfBudget
+      ? 'url(#budgetOutOfBudgetHatch)'
+      : payload.color
+  const capFill = isPlanned ? `url(#${PLANNED_OVER_PATTERN})` : OVER_BUDGET_COLOR
+
+  // Only the top of the stack gets rounded corners: a realized segment with
+  // commitments above it is an interior edge.
+  const radius: [number, number, number, number] =
+    isPlanned || payload.planned <= 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]
+
+  const cap = capHeight(payload, value, height, isPlanned ? 0 : payload.planned)
+  if (cap <= 0) {
+    return <Rectangle x={x} y={y} width={width} height={height} radius={radius} fill={fill} />
   }
 
-  const excessHeight = Math.max((height * (payload.realized - budgeted)) / payload.realized, 3)
-  const withinHeight = Math.max(height - excessHeight - SURFACE_GAP, 0)
+  const capPx = Math.max(cap, 3)
+  const withinHeight = Math.max(height - capPx - SURFACE_GAP, 0)
+  const crossing = y + capPx + SURFACE_GAP / 2
   return (
     <g>
+      <Rectangle x={x} y={y} width={width} height={capPx} radius={radius} fill={capFill} />
+      {/* The envelope level, drawn in the gap. Without it the gap reads as a
+          rendering seam; with it the cap reads as the part above a line — which
+          is what a category coloured close to rose needs to stay legible. */}
+      {withinHeight > 0 && (
+        <line
+          x1={x} x2={x + width} y1={crossing} y2={crossing}
+          stroke={NEUTRAL} strokeWidth={1.25}
+        />
+      )}
       <Rectangle
-        x={x} y={y} width={width} height={excessHeight}
-        radius={[4, 4, 0, 0]} fill={OVER_BUDGET_COLOR}
-      />
-      <Rectangle
-        x={x} y={y + excessHeight + SURFACE_GAP} width={width} height={withinHeight}
+        x={x} y={y + capPx + SURFACE_GAP} width={width} height={withinHeight}
         radius={0} fill={fill}
       />
     </g>
@@ -126,6 +189,11 @@ interface BudgetReportProps {
 export function BudgetReport({ data, currency, locale, isLoading }: BudgetReportProps) {
   const { t } = useTranslation()
   const { mask, privacyMode, MASK } = usePrivacyMode()
+  // Read where the toggle writes it. On this tab the preference governs the
+  // headline only — the chart always shows both segments, or a future month
+  // would read as empty for anyone who left the toggle off (planning/004, D2).
+  const { user } = useAuth()
+  const includePlanned = user?.preferences?.include_planned ?? false
 
   // The chart outgrows its container when there are many categories, so it
   // needs the container's real width to decide when to start scrolling.
@@ -152,6 +220,7 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
               <Skeleton className="h-12 w-28" />
               <Skeleton className="h-12 w-28" />
               <Skeleton className="h-12 w-28" />
+              <Skeleton className="h-12 w-28" />
             </div>
           </div>
         </div>
@@ -164,14 +233,37 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
 
   const chartData = data ? buildBudgetChartData(data, t('reports.outOfBudget')) : []
   const summary = data?.summary
-  const balance = summary?.balance ?? 0
+  const balance = (includePlanned ? summary?.committed_balance : summary?.balance) ?? 0
   const balanceColor = balance >= 0 ? 'text-emerald-600' : 'text-rose-500'
 
   const metrics = [
     { key: 'budgeted', color: NEUTRAL, value: summary?.budgeted ?? 0 },
     { key: 'realized', color: '#6366F1', value: summary?.realized ?? 0 },
-    { key: 'outOfBudget', color: NEUTRAL, value: summary?.out_of_budget ?? 0 },
+    // Always its own figure, in both toggle states: the headline may fold
+    // commitments in, but it must never be unclear what it counted.
+    { key: 'planned', color: '#6366F1', value: summary?.planned ?? 0, striped: true },
+    {
+      key: 'outOfBudget',
+      color: NEUTRAL,
+      value: (summary?.out_of_budget ?? 0) + (summary?.out_of_budget_planned ?? 0),
+    },
   ]
+
+  // A window that starts after today holds commitments only, so the share of
+  // the envelope already committed is the question the month raises. It is a
+  // ratio of what was recorded to what was budgeted — not a projection of
+  // month-end spend, which stays out of scope (003).
+  // Compared as months, and against the browser's local month like every other
+  // month control on the page — `toISOString()` would answer in UTC and read a
+  // late evening in a western timezone as tomorrow.
+  const isFuture = !!data && data.meta.start_date.slice(0, 7) > currentMonth()
+  const committedShare =
+    isFuture && summary && summary.budgeted > 0
+      ? ((summary.realized + summary.planned) / summary.budgeted) * 100
+      : null
+
+  // One planned pattern per distinct colour on screen — see plannedPatternId.
+  const plannedColors = Array.from(new Set(chartData.map((datum) => datum.color)))
 
   // The realized bars wear each category's own colour, so a single swatch would
   // misrepresent them: the legend key samples the colours actually on screen.
@@ -193,6 +285,11 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
             <p className={`text-3xl font-bold tabular-nums ${balanceColor}`}>
               {mask(formatCurrency(balance, currency, locale))}
             </p>
+            {committedShare !== null && !privacyMode && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t('reports.committedShare', { percent: committedShare.toFixed(0) })}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-6">
             {metrics.map((metric) => (
@@ -200,7 +297,14 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                 <div className="flex items-center gap-1.5 mb-0.5">
                   <div
                     className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: metric.color }}
+                    style={
+                      metric.striped
+                        ? {
+                            backgroundImage: `repeating-linear-gradient(-45deg, ${metric.color} 0 1.5px, transparent 1.5px 4px)`,
+                            backgroundColor: `${metric.color}38`,
+                          }
+                        : { backgroundColor: metric.color }
+                    }
                   />
                   <p className="text-xs font-medium text-muted-foreground">
                     {t(`reports.${metric.key}`)}
@@ -233,6 +337,20 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                 }}
               />
               <span className="text-[11px] text-muted-foreground">{t('reports.realized')}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div
+                className="w-4 h-2 rounded-sm"
+                style={{
+                  // The SVG pattern has no HTML equivalent; the stripe angle and
+                  // spacing are matched by hand so the key reads as the segment.
+                  backgroundImage: `repeating-linear-gradient(-45deg, ${
+                    legendGradient[0] ?? '#6366F1'
+                  } 0 2px, transparent 2px 5px)`,
+                  backgroundColor: `${legendGradient[0] ?? '#6366F1'}38`,
+                }}
+              />
+              <span className="text-[11px] text-muted-foreground">{t('reports.planned')}</span>
             </div>
             <div className="flex items-center gap-1.5">
               <div
@@ -273,6 +391,10 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                   <rect width={6} height={6} fill={NEUTRAL} fillOpacity={0.28} />
                   <line x1={0} y1={0} x2={0} y2={6} stroke={NEUTRAL} strokeWidth={2.5} />
                 </pattern>
+                {plannedColors.map((color) => (
+                  <PlannedPattern key={color} id={plannedPatternId(color)} color={color} />
+                ))}
+                <PlannedPattern id={PLANNED_OVER_PATTERN} color={OVER_BUDGET_COLOR} />
               </defs>
               <CartesianGrid
                 vertical={false}
@@ -287,7 +409,7 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                 // when it is left to pick an interval.
                 interval={0}
                 height={AXIS_BAND}
-                tick={<CategoryTick />}
+                tick={<CategoryTick data={chartData} />}
               />
               <YAxis
                 tickFormatter={(value: number) => {
@@ -307,10 +429,10 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                   if (!active || !payload?.length) return null
                   const datum = payload[0].payload as BudgetChartDatum
                   const isOutOfBudget = datum.key === OUT_OF_BUDGET_KEY
-                  const difference = (datum.budgeted ?? 0) - datum.realized
+                  const difference = (datum.budgeted ?? 0) - datum.committed
                   const percentage =
                     datum.budgeted && datum.budgeted > 0
-                      ? (datum.realized / datum.budgeted) * 100
+                      ? (datum.committed / datum.budgeted) * 100
                       : null
                   return (
                     <div
@@ -332,8 +454,18 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                       <p>
                         {t('reports.realized')}: {money(datum.realized)}
                       </p>
+                      {datum.planned > 0 && (
+                        <p>
+                          {t('reports.planned')}: {money(datum.planned)}
+                        </p>
+                      )}
                       {!isOutOfBudget && (
                         <>
+                          {datum.planned > 0 && (
+                            <p>
+                              {t('reports.committed')}: {money(datum.committed)}
+                            </p>
+                          )}
                           <p>
                             {t('reports.budgeted')}: {money(datum.budgeted ?? 0)}
                           </p>
@@ -365,7 +497,20 @@ export function BudgetReport({ data, currency, locale, isLoading }: BudgetReport
                   )
                 }}
               />
-              <Bar dataKey="realized" maxBarSize={BAR_SIZE} shape={<RealizedBar />} />
+              {/* Realized and planned share a stack — one execution column
+                  against the envelope. The track stays a separate group. */}
+              <Bar
+                dataKey="realized"
+                stackId="execution"
+                maxBarSize={BAR_SIZE}
+                shape={<ExecutionSegment kind="realized" />}
+              />
+              <Bar
+                dataKey="planned"
+                stackId="execution"
+                maxBarSize={BAR_SIZE}
+                shape={<ExecutionSegment kind="planned" />}
+              />
               <Bar
                 dataKey="budgeted"
                 fill={NEUTRAL}
