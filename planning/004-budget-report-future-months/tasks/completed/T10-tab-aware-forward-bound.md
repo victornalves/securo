@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T10   |
 | Feature    | 004   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T5    |
 | PR         |       |
 | Jira       | —     |
@@ -42,3 +42,9 @@ clamp, and URL persistence.
 
 Verified by: stepping to +12 disables the forward arrow; switching to Net Worth from a future
 month lands on the current month with the URL updated; a pinned future-month URL opens on it.
+
+## Notes
+
+**Outcome.** As planned — `maxDate` reads `bounds.latest_month` only when `isBudget`, and
+`handleSelectTab` clamps a future month when leaving the tab. No new state, no URL write: the
+existing state->URL effect mirrors the clamp.

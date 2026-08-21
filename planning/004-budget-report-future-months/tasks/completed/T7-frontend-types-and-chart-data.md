@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T7    |
 | Feature    | 004   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T4    |
 | PR         |       |
 | Jira       | —     |
@@ -51,3 +51,10 @@ is zero.
 
 Satisfies *"Over-budget is evaluated on `realized + planned` against `budgeted`"* (data half)
 and *"The out-of-budget column splits realized and planned the same way"*.
+
+## Notes
+
+**Outcome.** Types mirrored, `BudgetChartDatum` gained `planned` and `committed`, `over` moved to
+the committed basis, and the out-of-budget column now appears when either half is non-zero.
+`reports.bounds()` in `lib/api.ts` returns `latest_month` too. Six new cases in
+`budget-report-utils.test.ts`.

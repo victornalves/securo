@@ -1140,8 +1140,10 @@ export const reports = {
     const { data } = await api.get('/reports/budget', { params: { months, period, anchor_month: anchorMonth } })
     return data
   },
-  // Earliest navigable month for the month-mode stepper's lower bound.
-  bounds: async (): Promise<{ earliest_month: string | null }> => {
+  // Navigable range for the month-mode stepper: `earliest_month` bounds it
+  // below, `latest_month` above (budget tab only — the other tabs stop at
+  // the current month).
+  bounds: async (): Promise<{ earliest_month: string | null; latest_month: string }> => {
     const { data } = await api.get('/reports/bounds')
     return data
   },

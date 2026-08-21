@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T9    |
 | Feature    | 004   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T7    |
 | PR         |       |
 | Jira       | —     |
@@ -48,3 +48,10 @@ whether `planned` is folded into the hero's headline"*, and the committed-share 
 
 Verified by: toggling *include planned* changes the headline and nothing in the chart; a future
 month shows the share, a past month does not.
+
+## Notes
+
+**Outcome.** As planned. Two details worth recording: the planned metric's swatch is striped
+rather than a new colour, matching the chart segment; and `isFuture` compares *months* via
+`currentMonth()` from `lib/month-utils` rather than `toISOString().slice(0, 10)` — the latter
+answers in UTC and would read a late evening in a western timezone as tomorrow.

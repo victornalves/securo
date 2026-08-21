@@ -20,6 +20,14 @@ export interface BudgetChartDatum {
    *  recognizable instead of every broken budget looking alike. */
   color: string
   realized: number
+  /** Recorded commitments that have not happened yet. Stacked on top of
+   *  `realized`, so a future month reads as commitments against the envelope
+   *  and the current month keeps the two apart. */
+  planned: number
+  /** realized + planned — the basis for `over` and the tooltip's committed row.
+   *  An envelope with room left only while its commitments are ignored has no
+   *  room left. */
+  committed: number
   /** `null` on the out-of-budget column, which has no envelope to draw. */
   budgeted: number | null
   over: boolean
@@ -42,21 +50,27 @@ export function buildBudgetChartData(
     label: row.category_name,
     color: row.category_color,
     realized: row.realized,
+    planned: row.planned,
+    committed: row.realized + row.planned,
     budgeted: row.budgeted,
-    // Strictly greater: spending exactly the envelope is not overspending.
-    over: row.realized > row.budgeted,
+    // Strictly greater: committing exactly the envelope is not overspending.
+    over: row.realized + row.planned > row.budgeted,
     coverage:
       row.months_budgeted < row.months_in_window
         ? { budgeted: row.months_budgeted, total: row.months_in_window }
         : null,
   }))
 
-  if (response.summary.out_of_budget > 0) {
+  const outOfBudget = response.summary.out_of_budget
+  const outOfBudgetPlanned = response.summary.out_of_budget_planned
+  if (outOfBudget + outOfBudgetPlanned > 0) {
     data.push({
       key: OUT_OF_BUDGET_KEY,
       label: outOfBudgetLabel,
       color: OUT_OF_BUDGET_COLOR,
-      realized: response.summary.out_of_budget,
+      realized: outOfBudget,
+      planned: outOfBudgetPlanned,
+      committed: outOfBudget + outOfBudgetPlanned,
       budgeted: null,
       over: false,
       coverage: null,
@@ -64,6 +78,29 @@ export function buildBudgetChartData(
   }
 
   return data
+}
+
+/**
+ * Height in pixels of the part of one stacked segment that sits above the
+ * envelope.
+ *
+ * Neither segment can work this out from its own value: the envelope is
+ * crossed by the *stack*, so whether a segment is above it depends on what
+ * sits below. `excess` is the whole overshoot, and each segment paints at most
+ * its own share of it — the realized segment (drawn first, at the bottom) only
+ * once the overshoot is deeper than the planned segment above it.
+ */
+export function capHeight(
+  datum: Pick<BudgetChartDatum, 'over' | 'budgeted' | 'committed'>,
+  segmentValue: number,
+  segmentHeight: number,
+  /** Total of the segments stacked above this one. */
+  above = 0,
+): number {
+  if (!datum.over || !datum.budgeted || segmentValue <= 0 || segmentHeight <= 0) return 0
+  const excess = datum.committed - datum.budgeted
+  const share = Math.min(Math.max(excess - above, 0), segmentValue)
+  return share * (segmentHeight / segmentValue)
 }
 
 /** Minimum horizontal room a column needs to keep its label readable. */

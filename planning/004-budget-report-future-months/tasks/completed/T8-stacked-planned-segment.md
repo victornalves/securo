@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T8    |
 | Feature    | 004   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T7    |
 | PR         |       |
 | Jira       | —     |
@@ -74,3 +74,19 @@ and the out-of-budget split — legible with 20+ categories and masked under pri
 
 Verified by: manual QA against a workspace with a category over budget by realized alone, one
 over by planned alone, one over by the combination, and one with no spending at all.
+
+## Notes
+
+**Outcome.** `RealizedBar` became `ExecutionSegment`, one component rendering either segment —
+the two differ only in fill, rounding and how much of the overshoot they carry, so two near-copies
+would have been the wrong shape. `capHeight` lives in `budget-report-utils.ts` (pure, tested: 6
+cases including the spill from the planned segment into the realized one) rather than in the
+component.
+
+The planned fill is one `<pattern>` per *distinct* colour in `plannedColors`, plus a single rose
+`budgetPlannedOver` for capped commitments. The legend's planned swatch is a CSS
+`repeating-linear-gradient` matched to the SVG stripe by hand — there is no way to reference an
+SVG pattern from an HTML element.
+
+Tooltip rows for planned and committed appear only when `planned > 0`, so a past month's tooltip
+reads exactly as it did before.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildBudgetChartData,
+  capHeight,
   chartWidth,
   COLUMN_WIDTH,
   OUT_OF_BUDGET_COLOR,
@@ -18,6 +19,7 @@ function row(overrides: Partial<BudgetReportRow> = {}): BudgetReportRow {
     group_name: null,
     budgeted: 1000,
     realized: 400,
+    planned: 0,
     difference: 600,
     percentage_used: 40,
     months_in_window: 1,
@@ -29,12 +31,22 @@ function row(overrides: Partial<BudgetReportRow> = {}): BudgetReportRow {
 function response(
   rows: BudgetReportRow[],
   outOfBudget = 0,
+  outOfBudgetPlanned = 0,
 ): BudgetReportResponse {
   const budgeted = rows.reduce((sum, r) => sum + r.budgeted, 0)
   const realized = rows.reduce((sum, r) => sum + r.realized, 0)
+  const planned = rows.reduce((sum, r) => sum + r.planned, 0)
   return {
     rows,
-    summary: { budgeted, realized, balance: budgeted - realized, out_of_budget: outOfBudget },
+    summary: {
+      budgeted,
+      realized,
+      planned,
+      balance: budgeted - realized,
+      committed_balance: budgeted - realized - planned,
+      out_of_budget: outOfBudget,
+      out_of_budget_planned: outOfBudgetPlanned,
+    },
     meta: {
       currency: 'BRL',
       start_date: '2026-08-01',
@@ -143,6 +155,119 @@ describe('buildBudgetChartData', () => {
 
   it('returns nothing when there is neither a budget nor spending', () => {
     expect(buildBudgetChartData(response([], 0), 'Out of budget')).toEqual([])
+  })
+
+  it('sums realized and planned into the committed total', () => {
+    const data = buildBudgetChartData(
+      response([row({ budgeted: 1000, realized: 400, planned: 250 })]),
+      'Out of budget',
+    )
+
+    expect(data[0].committed).toBe(650)
+    expect(data[0].over).toBe(false)
+  })
+
+  it('flags a category pushed over its envelope by commitments alone', () => {
+    // The point of the split: 400 spent is inside a 1000 envelope, but 400
+    // spent plus 700 committed is not.
+    const data = buildBudgetChartData(
+      response([row({ budgeted: 1000, realized: 400, planned: 700 })]),
+      'Out of budget',
+    )
+
+    expect(data[0].over).toBe(true)
+    expect(data[0].color).toBe('#10B981')
+  })
+
+  it('does not flag a category committed to exactly its envelope', () => {
+    const data = buildBudgetChartData(
+      response([row({ budgeted: 1000, realized: 400, planned: 600 })]),
+      'Out of budget',
+    )
+
+    expect(data[0].over).toBe(false)
+  })
+
+  it('flags a future month where everything is planned', () => {
+    const data = buildBudgetChartData(
+      response([row({ budgeted: 500, realized: 0, planned: 800 })]),
+      'Out of budget',
+    )
+
+    expect(data[0].over).toBe(true)
+    expect(data[0].realized).toBe(0)
+    expect(data[0].planned).toBe(800)
+  })
+
+  it('shows the out-of-budget column when only its planned half is non-zero', () => {
+    const data = buildBudgetChartData(
+      response([row()], 0, 320),
+      'Out of budget',
+    )
+
+    expect(data).toHaveLength(2)
+    expect(data[1].key).toBe(OUT_OF_BUDGET_KEY)
+    expect(data[1].realized).toBe(0)
+    expect(data[1].planned).toBe(320)
+    expect(data[1].committed).toBe(320)
+  })
+
+  it('splits the out-of-budget column into its two halves', () => {
+    const data = buildBudgetChartData(response([row()], 60, 90), 'Out of budget')
+
+    expect(data[1].realized).toBe(60)
+    expect(data[1].planned).toBe(90)
+    expect(data[1].committed).toBe(150)
+  })
+})
+
+describe('capHeight', () => {
+  // One pixel per currency unit throughout, so the numbers read as amounts.
+  const px = (value: number) => value
+
+  it('is zero for a column inside its envelope', () => {
+    const datum = { over: false, budgeted: 1000, committed: 650 }
+    expect(capHeight(datum, 400, px(400))).toBe(0)
+    expect(capHeight(datum, 250, px(250))).toBe(0)
+  })
+
+  it('caps only the overshoot when realized alone broke the envelope', () => {
+    // 1200 spent against 1000, nothing committed: 200 above the line.
+    const datum = { over: true, budgeted: 1000, committed: 1200 }
+    expect(capHeight(datum, 1200, px(1200), 0)).toBe(200)
+  })
+
+  it('puts the whole overshoot in the planned segment when it fits there', () => {
+    // 400 spent + 700 committed against 1000: 100 over, all of it planned.
+    const datum = { over: true, budgeted: 1000, committed: 1100 }
+    expect(capHeight(datum, 700, px(700), 0)).toBe(100)
+    // The realized segment sits entirely below the line.
+    expect(capHeight(datum, 400, px(400), 700)).toBe(0)
+  })
+
+  it('spills into the realized segment when the overshoot runs deeper than planned', () => {
+    // 900 spent + 300 committed against 1000: 200 over — the planned segment
+    // holds 300, so all 200 of it lands there and realized stays clean.
+    const shallow = { over: true, budgeted: 1000, committed: 1200 }
+    expect(capHeight(shallow, 300, px(300), 0)).toBe(200)
+    expect(capHeight(shallow, 900, px(900), 300)).toBe(0)
+
+    // 900 spent + 300 committed against 500: 700 over. Planned takes its whole
+    // 300, and the remaining 400 caps the top of realized.
+    const deep = { over: true, budgeted: 500, committed: 1200 }
+    expect(capHeight(deep, 300, px(300), 0)).toBe(300)
+    expect(capHeight(deep, 900, px(900), 300)).toBe(400)
+  })
+
+  it('scales the cap to the segment height, not to the amount', () => {
+    // 100 over out of a 200-unit segment drawn 50px tall → a quarter of it.
+    const datum = { over: true, budgeted: 100, committed: 200 }
+    expect(capHeight(datum, 200, 50, 0)).toBe(25)
+  })
+
+  it('returns zero for an empty segment or a column with no envelope', () => {
+    expect(capHeight({ over: true, budgeted: 100, committed: 500 }, 0, 0)).toBe(0)
+    expect(capHeight({ over: true, budgeted: null, committed: 500 }, 500, 500)).toBe(0)
   })
 })
 

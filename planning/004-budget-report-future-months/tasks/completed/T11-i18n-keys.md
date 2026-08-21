@@ -4,7 +4,7 @@
 | ---------- | ------ |
 | Task       | T11    |
 | Feature    | 004    |
-| Status     | Todo   |
+| Status     | Done   |
 | Depends on | T8, T9 |
 | PR         |        |
 | Jira       | —      |
@@ -43,3 +43,12 @@ Drop any key that T8/T9 ended up not using.
 
 Satisfies *"Every new user-facing string exists in all nine locale files"* and `i18n.test.ts`
 key-parity stays green.
+
+## Notes
+
+**Outcome.** `reports.planned`, `reports.committed`, `reports.committedShare` in all nine
+locales. `plannedLegend` was dropped — the legend reads the same word as the metric, so a second
+key would have been two strings to keep in agreement for no gain.
+
+The files round-trip exactly through `json.dumps(indent=2, ensure_ascii=False)`, so the keys were
+inserted next to `realized` programmatically with a 3-line diff per file and no reformatting.

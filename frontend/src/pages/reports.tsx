@@ -282,6 +282,12 @@ export default function ReportsPage() {
 
   const handleSelectTab = (key: string) => {
     setActiveTab(key)
+    // Leaving the budget tab with a future month selected: the other tabs
+    // cannot report on it, so clamp back to the current month. The state->URL
+    // effect mirrors the clamp, which is why nothing is written here.
+    if (key !== 'budget' && month > currentMonth()) {
+      setMonth(currentMonth())
+    }
     setCompositionView(key === 'net_worth' ? 'netWorth' : 'net')
     setSparklinePage(0)
     setSelectedDate(null)
@@ -658,7 +664,14 @@ export default function ReportsPage() {
                 onChange={(m) => { setMonth(m); setSelectedDate(null) }}
                 locale={locale}
                 minDate={bounds?.earliest_month ? parseMonth(bounds.earliest_month) : undefined}
-                maxDate={new Date()}
+                // Only the budget tab reads forward: it is the one whose
+                // figures a future month has something to say about. The other
+                // four would answer an empty chart, so they stop at today.
+                maxDate={
+                  isBudget && bounds?.latest_month
+                    ? parseMonth(bounds.latest_month)
+                    : new Date()
+                }
               />
             ) : (
               <div className="flex items-center rounded-lg border border-border bg-card overflow-hidden">
