@@ -12,6 +12,7 @@ work started) → Done (all tasks complete).
 
 | ID  | Type | Title | Docs | Owner | Jira |
 | --- | ---- | ----- | ---- | ----- | ---- |
+| 004 | Feature | Budget report future months | [spec](004-budget-report-future-months/spec.md) · [plan](004-budget-report-future-months/plan.md) · [tasks](004-budget-report-future-months/tasks/) | Victor Alves | — |
 | 003 | Feature | Budget report tab | [spec](003-budget-report-tab/spec.md) · [plan](003-budget-report-tab/plan.md) · [tasks](003-budget-report-tab/tasks/) | Victor Alves | — |
 
 ## Done
