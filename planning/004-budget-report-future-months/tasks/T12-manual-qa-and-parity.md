@@ -98,3 +98,17 @@ containers hot-reload, so the branch is already live there. What to look at:
 - toggling *include planned* changes the hero headline and leaves the chart alone;
 - privacy mode masks the axis, tooltips, hero figures and the committed share;
 - a Collection filter still shows the notice instead of the chart.
+
+**After the data fix (2026-08-21).** Victor promoted the 14 rows. No future-dated `posted` rows
+remain in the workspace — all 76 future-dated rows are now `planned` — and the figures moved
+exactly as predicted: 2026-09 went from 310.22 realized / 6695.86 planned to **0.00 realized**,
+2026-10 from 1160.22 to **0.00**, and `latest_month` extended from 2027-01 to **2027-03**, the
+`(12/12)` instalment now being a recorded commitment. Parity with `/budgets` still holds across
+2026-07 to 2026-10.
+
+A future month now reads the way the spec intended: nothing realized, everything committed.
+Backlog 005 remains the general fix for anyone else's data.
+
+**Left on this task:** the forward arrow disabling at 2027-03, the clamp when leaving the tab,
+privacy mode, the Collection notice, and a look at T13's two new cues (the September chart Victor
+reviewed predates them).
