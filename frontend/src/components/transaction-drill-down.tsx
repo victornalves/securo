@@ -7,35 +7,14 @@ import { AlertTriangle, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import {
+  buildDrillDownItems,
+  summarizeDrillDown,
+  type DrillDownFilter,
+} from '@/lib/drill-down-utils'
 import type { Transaction } from '@/types'
 
-export type DrillDownFilter = {
-  title: string
-  category_id?: string
-  uncategorized?: boolean
-  account_id?: string
-  // Scope to a set of accounts (e.g. the active collection's accounts).
-  account_ids?: string[]
-  type?: 'credit' | 'debit'
-  from?: string
-  to?: string
-}
-
-type DisplayItem = {
-  key: string
-  description: string
-  date: string
-  type: 'debit' | 'credit'
-  amount: number
-  amountPrimary: number | null
-  currency: string
-  categoryIcon: string | null
-  categoryName: string | null
-  categoryColor: string | null
-  isProjected: boolean
-  attachmentCount: number
-  transaction: Transaction | null
-}
+export type { DrillDownFilter }
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
@@ -58,8 +37,18 @@ export function TransactionDrillDown({
   const dateLocale = useDateLocale()
   const panelRef = useRef<HTMLDivElement>(null)
 
+  const includePlanned = user?.preferences?.include_planned ?? false
+  // The uncategorized drawer explains `pending_categorization`, a plain row
+  // count with no status predicate — so it lists planned rows in both
+  // preference states. Every other drawer explains a preference-dependent
+  // P&L figure and follows the preference (006/D3).
+  const pnlIncludePlanned = filter?.uncategorized ? true : includePlanned
+
   const { data, isLoading } = useQuery({
-    queryKey: ['drill-down', filter],
+    // The preference belongs in the key, not in IncludePlannedToggle's
+    // invalidation list: it is part of the request, so keying on it can't be
+    // forgotten the way registering a fifth consumer over there could.
+    queryKey: ['drill-down', filter, pnlIncludePlanned],
     queryFn: () =>
       transactionsApi.list({
         category_id: filter?.category_id,
@@ -71,6 +60,7 @@ export function TransactionDrillDown({
         to: filter?.to,
         limit: 200,
         user_pnl_only: true,
+        pnl_include_planned: pnlIncludePlanned,
       }),
     enabled: !!filter,
   })
@@ -92,55 +82,15 @@ export function TransactionDrillDown({
   const isAccrual = accountingModeData?.mode === 'accrual'
 
   // Merge real + projected transactions, filtering projected by drill-down criteria
-  const displayItems = useMemo((): DisplayItem[] => {
-    const items: DisplayItem[] = []
-
-    for (const tx of data?.items ?? []) {
-      items.push({
-        key: tx.id,
-        description: tx.description,
-        date: tx.date,
-        type: tx.type as 'debit' | 'credit',
-        amount: Number(tx.amount),
-        amountPrimary: tx.amount_primary != null ? Number(tx.amount_primary) : null,
-        currency: tx.currency,
-        categoryIcon: tx.category?.icon ?? null,
-        categoryName: tx.category?.name ?? null,
-        categoryColor: tx.category?.color ?? null,
-        isProjected: false,
-        attachmentCount: tx.attachment_count ?? 0,
-        transaction: tx,
-      })
-    }
-
-    for (const pt of projectedTxs ?? []) {
-      // Filter projected txs by drill-down criteria
-      if (filter?.type && pt.type !== filter.type) continue
-      if (filter?.category_id && String(pt.category_id) !== filter.category_id) continue
-      if (filter?.uncategorized && pt.category_id != null) continue
-      if (filter?.from && pt.date < filter.from) continue
-      if (filter?.to && pt.date > filter.to) continue
-
-      items.push({
-        key: `proj-${pt.recurring_id}-${pt.date}`,
-        description: pt.description,
-        date: pt.date,
-        type: pt.type,
-        amount: pt.amount,
-        amountPrimary: pt.amount_primary ?? null,
-        currency: pt.currency,
-        categoryIcon: pt.category_icon,
-        categoryName: pt.category_name,
-        categoryColor: pt.category_color ?? null,
-        isProjected: true,
-        attachmentCount: 0,
-        transaction: null,
-      })
-    }
-
-    items.sort((a, b) => a.date.localeCompare(b.date))
-    return items
-  }, [data, projectedTxs, filter])
+  const displayItems = useMemo(
+    () =>
+      buildDrillDownItems({
+        transactions: data?.items ?? [],
+        projections: projectedTxs ?? [],
+        filter,
+      }),
+    [data, projectedTxs, filter],
+  )
 
   // Close on Escape
   useEffect(() => {
@@ -170,19 +120,10 @@ export function TransactionDrillDown({
     }
   }, [filter, onClose])
 
-  // Sum in user's primary currency. For foreign-currency rows we need
-  // amount_primary; if it's missing we can't convert, so skip the row
-  // instead of adding a raw foreign amount as if it were primary. This
-  // matches how get_summary computes monthly_*_primary on the backend.
-  const absTotal = displayItems.reduce((sum, item) => {
-    if (item.currency === userCurrency) {
-      return sum + Math.abs(item.amount)
-    }
-    if (item.amountPrimary != null) {
-      return sum + Math.abs(item.amountPrimary)
-    }
-    return sum
-  }, 0)
+  const { absTotal, plannedCount, plannedTotal } = summarizeDrillDown(
+    displayItems,
+    userCurrency,
+  )
 
   return (
     <>
@@ -238,9 +179,9 @@ export function TransactionDrillDown({
               {displayItems.map((item) => (
                 <div
                   key={item.key}
-                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${!item.isProjected ? 'cursor-pointer' : ''}`}
+                  className={`flex items-center gap-3 px-5 py-3 hover:bg-muted transition-colors ${item.kind !== 'projected' ? 'cursor-pointer' : ''}`}
                   onClick={() => {
-                    if (!item.isProjected && item.transaction) {
+                    if (item.kind !== 'projected' && item.transaction) {
                       onTransactionClick?.(item.transaction)
                     }
                   }}
@@ -253,8 +194,22 @@ export function TransactionDrillDown({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
-                      {item.isProjected && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-600 shrink-0">
+                      {/* Violet is the transactions view's colour for a planned
+                          row, so it belongs to planned here too; projections
+                          take the primary tint that view uses for recurring. */}
+                      {item.kind === 'planned' && (
+                        <span
+                          className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-500/20 border border-violet-200 dark:border-violet-500/30 px-1.5 py-0.5 rounded-full"
+                          title={t('transactions.plannedHint')}
+                        >
+                          {t('transactions.plannedBadge')}
+                        </span>
+                      )}
+                      {/* No tooltip on the projection badge:
+                          `recurringLinkedTooltip` describes a stored row linked
+                          to a rule, which a projection is not — it has no row. */}
+                      {item.kind === 'projected' && (
+                        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full">
                           {t('transactions.recurringBadge')}
                         </span>
                       )}
@@ -307,6 +262,17 @@ export function TransactionDrillDown({
                 {mask(formatCurrency(absTotal, userCurrency, locale))}
               </span>
             </div>
+            {/* One total — it has to equal the figure this drawer was opened
+                from. This line says how much of it is commitment rather than
+                history, which two competing headline figures could not do. */}
+            {plannedCount > 0 && (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {t('dashboard.drillDownPlannedNote', {
+                  count: plannedCount,
+                  total: mask(formatCurrency(plannedTotal, userCurrency, locale)),
+                })}
+              </p>
+            )}
           </div>
         )}
       </div>

@@ -5,7 +5,7 @@
 | ID           | 002          |
 | Type         | Feature      |
 | Status       | Approved     |
-| Version      | 1.1.0        |
+| Version      | 1.2.0        |
 | Author       | Victor Alves |
 | Last updated | 2026-08-15   |
 | Jira         | —            |
@@ -160,7 +160,12 @@ two places specifically:
 - [ ] The toggle governs **figures only**. Planned transactions remain listed in the transactions
       view in both toggle states; hiding them from a list is done with the list's own state filter,
       never by the toggle.
-- [ ] Turning the toggle off never removes a row from any list, and turning it on never adds one.
+- [ ] ~~Turning the toggle off never removes a row from any list, and turning it on never adds one.~~
+      **Narrowed by spec 006** to lists the user *navigates*: the transactions view, where someone
+      goes to find rows and a preference silently changing the contents would be hostile. It does
+      not hold for the dashboard drill-down drawer, which is reachable only by clicking a figure,
+      is titled after it, and exists solely to decompose it — there, excluding planned rows made
+      the drawer contradict the very number it was opened to explain.
 
 **Visibility**
 
@@ -213,7 +218,7 @@ two places specifically:
 | - | -------- |
 | D1 | Planned is a third value on the existing `Transaction.status` column, not a separate table or entity. |
 | D2 | Promotion from planned to realized is a manual user action only. No automatic matching in this scope. |
-| D3 | A single global *include planned* toggle governs aggregates. No per-view controls. It affects computed figures only — never which rows appear in a list. Listing is controlled independently by the transactions filter. |
+| D3 | A single global *include planned* toggle governs aggregates. No per-view controls. It affects computed figures only — never which rows appear in a list. Listing is controlled independently by the transactions filter. **Narrowed by spec 006:** "list" here means a list the user navigates to browse. A drill-down that exists only to decompose one computed figure follows the preference, because a drawer that omits what its own figure counts is not a stricter reading of this rule — it is a contradiction of it. |
 | D4 | Fixing recurring placeholders written as `posted` is in scope, migration included. It is a product correctness fix; it does not serve the manual-entry workflow that motivates this spec. |
 | D5 | Manual entry uses an explicit planned / realized control, defaulting from the date at creation time only, and yielding permanently to the user once touched. |
 | D6 | Estimated vs. exact committed amounts are **not modelled**. A planned amount is simply the current best figure; the user overwrites it in place when the real one arrives. No estimate flag, no amount history, no before/after comparison. |
@@ -267,6 +272,7 @@ two places specifically:
 
 | Version | Date       | Author       | Change        |
 | ------- | ---------- | ------------ | ------------- |
+| 1.2.0   | 2026-09-01 | Victor Alves | D3 narrowed by [spec 006](../006-planned-transactions-in-dashboard-drill-down/spec.md): the figures-only rule governs lists the user navigates, not the dashboard drill-down that decomposes a single figure. The corresponding acceptance criterion is annotated rather than rewritten — 002 shipped as written and the record of that stands. |
 | 0.1.0   | 2026-08-15 | Victor Alves | Initial draft |
 | 1.1.0   | 2026-08-15 | Victor Alves | Balance open question resolved during planning: the connected-account back-solve defect is confirmed and is fixed inside this spec rather than as a separate Bug spec. |
 | 1.0.0   | 2026-08-15 | Victor Alves | Approved. All six decisions closed; remaining open questions are technical and resolved during planning. |

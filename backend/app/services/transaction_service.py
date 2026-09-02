@@ -117,6 +117,7 @@ async def get_transactions(
     account_types: Optional[list[str]] = None,
     include_summary: bool = False,
     user_pnl_only: bool = False,
+    pnl_include_planned: bool = False,
     statuses: Optional[list[str]] = None,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
     """List transactions for a workspace.
@@ -124,6 +125,17 @@ async def get_transactions(
     `workspace_id` scopes the tenant (which transactions are visible). `user_id`
     is the *viewer* — used for Splitwise projection (linked-member visibility,
     is-shared tagging) which is identity-based, not tenancy-based.
+
+    `pnl_include_planned` is meaningful only together with `user_pnl_only`: it
+    reaches the P&L predicate and nothing else — never row visibility, which
+    stays governed by `statuses`. It defaults to False so this layer keeps
+    failing in the under-reporting direction, matching `counts_as_pnl`; the
+    caller's *include planned* preference is resolved one layer up, at the API
+    boundary, which is where the identity of the asker is known (006/D4).
+
+    The sole caller of `user_pnl_only` today is the dashboard drill-down
+    drawer, whose job is to decompose a dashboard figure. That is why the flag
+    tracks the dashboard's P&L definition, preference included.
     """
     # In "accrual" mode, bucket/order by effective_date so list filters
     # line up with the cash-flow view used by the dashboard and reports.
@@ -251,13 +263,18 @@ async def get_transactions(
     if exclude_transfers:
         base_query = base_query.where(Transaction.transfer_pair_id.is_(None))
     if user_pnl_only:
-        base_query = base_query.where(Account.is_closed == False, counts_as_user_pnl())
+        base_query = base_query.where(
+            Account.is_closed == False, counts_as_user_pnl(pnl_include_planned)
+        )
     if txn_type:
         base_query = base_query.where(Transaction.type == txn_type)
 
-    # Visibility only. The include-planned *preference* governs computed
-    # figures and must never reach this query — a list's contents are
-    # identical in both preference states (spec D3).
+    # Visibility only — driven by the transactions filter, never by the
+    # include-planned preference: /transactions returns the same rows in both
+    # preference states (002/D3, still in force for the navigable list).
+    # The preference reaches the *P&L predicate* above instead, via
+    # pnl_include_planned, because a drill-down explains a computed figure
+    # rather than letting the user browse (006/D1).
     if statuses:
         base_query = base_query.where(Transaction.status.in_(statuses))
     if currency:

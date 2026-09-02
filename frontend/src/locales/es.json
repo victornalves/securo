@@ -267,6 +267,7 @@
     "drillDownUncategorized": "Transacciones sin categorizar",
     "drillDownDay": "Transacciones — {{date}}",
     "drillDownTotal": "{{count}} transacciones · {{total}}",
+    "drillDownPlannedNote": "Incluye {{count}} planificados · {{total}}",
     "drillDownEmpty": "No se encontraron transacciones",
     "drillDownClose": "Cerrar",
     "accrualNote": "Las transacciones con tarjeta de crédito se agrupan por la fecha de vencimiento de la factura (modo acumulado).",

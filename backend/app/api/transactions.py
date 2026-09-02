@@ -98,7 +98,15 @@ async def list_transactions(
     limit: int = Query(50, ge=1, le=500),
     include_opening_balance: bool = Query(False),
     exclude_transfers: bool = Query(False),
-    user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
+    user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals. That definition includes planned rows when the caller's include-planned preference is on — see pnl_include_planned."),
+    pnl_include_planned: Optional[bool] = Query(
+        None,
+        description=(
+            "Only meaningful with user_pnl_only. Omitted: use the caller's "
+            "include-planned preference. true/false: override it. Never "
+            "affects row visibility, which is governed by `status`."
+        ),
+    ),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
@@ -117,6 +125,15 @@ async def list_transactions(
         txn_type=type, exclude_transfers=exclude_transfers,
         statuses=status,
         user_pnl_only=user_pnl_only,
+        # Resolve the preference here, where the asker's identity is known —
+        # the same place dashboard/report/budget services read it. An explicit
+        # value overrides it, which is what lets the uncategorized drill-down
+        # count planned rows in both preference states (006/D3).
+        pnl_include_planned=(
+            ctx.user.include_planned
+            if pnl_include_planned is None
+            else pnl_include_planned
+        ),
         accounting_mode=accounting_mode,
         tags=tags,
         bill_id=bill_id,
