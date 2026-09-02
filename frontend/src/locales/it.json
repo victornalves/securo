@@ -267,6 +267,7 @@
     "drillDownUncategorized": "Transazioni senza categoria",
     "drillDownDay": "Transazioni — {{date}}",
     "drillDownTotal": "{{count}} transazioni · {{total}}",
+    "drillDownPlannedNote": "Include {{count}} pianificati · {{total}}",
     "drillDownEmpty": "Nessuna transazione trovata",
     "drillDownClose": "Chiudi",
     "accrualNote": "Le transazioni con carta di credito sono raggruppate per scadenza dell'estratto conto (modalità per competenza).",

@@ -267,6 +267,7 @@
     "drillDownUncategorized": "Uncategorized transactions",
     "drillDownDay": "Transactions — {{date}}",
     "drillDownTotal": "{{count}} transactions · {{total}}",
+    "drillDownPlannedNote": "Includes {{count}} planned · {{total}}",
     "drillDownEmpty": "No transactions found",
     "drillDownClose": "Close",
     "accrualNote": "Credit-card transactions are grouped by bill due date (accrual mode).",

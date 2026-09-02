@@ -442,6 +442,7 @@ export const transactions = {
     include_opening_balance?: boolean
     exclude_transfers?: boolean
     user_pnl_only?: boolean
+    pnl_include_planned?: boolean
     tags?: string[]
     min_amount?: number
     max_amount?: number

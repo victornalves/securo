@@ -267,6 +267,7 @@
     "drillDownUncategorized": "Transactions non catégorisées",
     "drillDownDay": "Transactions — {{date}}",
     "drillDownTotal": "{{count}} transactions · {{total}}",
+    "drillDownPlannedNote": "Inclut {{count}} planifiés · {{total}}",
     "drillDownEmpty": "Aucune transaction trouvée",
     "drillDownClose": "Fermer",
     "accrualNote": "Les transactions par carte de crédit sont regroupées par date d'échéance de la facture (mode comptabilité d'engagement).",

@@ -267,6 +267,7 @@
     "drillDownUncategorized": "Транзакції без категорії",
     "drillDownDay": "Транзакції — {{date}}",
     "drillDownTotal": "{{count}} транзакцій · {{total}}",
+    "drillDownPlannedNote": "Включає {{count}} запланованих · {{total}}",
     "drillDownEmpty": "Транзакції не знайдено",
     "drillDownClose": "Закрити",
     "accrualNote": "Кредитні картки: транзакції групуються за датою платежу (метод нарахування).",
