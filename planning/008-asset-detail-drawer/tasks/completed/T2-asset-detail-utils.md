@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T2    |
 | Feature    | 008   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | —     |
 | PR         |       |
 | Jira       |       |
@@ -97,3 +97,21 @@ implements the unit table in `plan.md` → *Test Strategy*:
 
 Follow the style of `lib/drill-down-utils.ts`: a module docstring explaining why the logic
 lives outside the component, and a pointer back to `planning/008-asset-detail-drawer`.
+
+## Outcome
+
+`lib/asset-detail-utils.ts` with `runningPositions`, `boughtSoldTotals`,
+`cumulativeCostSeries`, `hasFilterableTicker` and `externalLinksFor`; 23 tests in
+`lib/asset-detail-utils.test.ts`, suite now 106/106.
+
+Two things the tests pin down beyond the task's list:
+
+- `runningPositions` is asserted to give the same result when the ledger arrives newest-first,
+  which is how the API serves it — the replay must not inherit the caller's ordering.
+- `cumulativeCostSeries` clamps a sale that would take the position negative, mirroring
+  `_recompute`'s own defensive clamp. The backend rejects an oversell, so this can only arise
+  from inconsistent data, but the series should not go negative if it does.
+
+The `.SA`-stripping regex is anchored to 2-4 uppercase letters after a dot, so `BTC-USD` keeps
+its pair suffix on TradingView while `PETR4.SA` loses its market suffix — covered by a test
+each, since a naive "strip everything after the last separator" would have broken crypto.
