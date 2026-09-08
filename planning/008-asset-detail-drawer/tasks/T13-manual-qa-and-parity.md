@@ -4,7 +4,7 @@
 | ---------- | ---------------------------------------------- |
 | Task       | T13                                            |
 | Feature    | 008                                            |
-| Status     | Todo                                           |
+| Status     | In Progress                                    |
 | Depends on | T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12 |
 | PR         |                                                |
 | Jira       |                                                |
@@ -72,3 +72,36 @@ the spec's scope is logged as an Open Question in `spec.md` or as a new backlog 
 Steps 6 and 4 are the two most likely to fail: closing a position mid-drawer is the plan's
 highest-likelihood risk, and the cold-load URL path is the one a naive implementation appears
 to pass.
+
+## Progress — automated parts done, interactive walkthrough NOT done
+
+**Done and green:**
+
+- `locales/i18n.test.ts` passes: no duplicate keys, full `en.json` coverage in all nine files,
+  no extra keys, and identical `{{placeholder}}` sets per key. Key counts are 1623 everywhere
+  except Polish at 1716, which is its i18next plural expansion (`_one` / `_few` / `_many`) —
+  the form the test explicitly accepts in place of a base key.
+- `lib/asset-detail-utils.test.ts`: 26 tests. Whole suite 109/109 across 6 files.
+- `tsc -b` clean; full `npm run build` (tsc + vite) green.
+- `eslint .` — 0 errors, 41 warnings, all of which predate this branch. The two in files this
+  branch touched (`set-state-in-effect` in the trade dialog, `exhaustive-deps` on
+  `activeAssets`) were confirmed present in the pre-extraction baseline.
+- **Locale key audit** (written for this task, run against the pre-branch commit for
+  comparison): every `t('…')` literal in the source resolves in `en.json`, and **this branch
+  orphaned no key**. The audit accounts for the four dynamic `t()` call sites by enumerating
+  their bounded input sets (`ASSET_TYPES`, `AssetValue.source`, `GROWTH_TYPES`,
+  `GROWTH_FREQUENCIES`) rather than treating `assets.*` as wholesale-reachable — which is what
+  confirms T10's removal of `addValue` / `valueHistory` / `amount` was safe. Eight `assets.*`
+  keys remain orphaned; all eight were already unused before this branch, and clearing them is
+  unrelated cleanup left out of scope.
+
+**Not done: the 12-step interactive walkthrough.** It needs the app running against real data
+— the Securo stack (postgres + backend) is not up in this environment, and starting it via
+docker-compose would write to the developer's own database. A `playwright` shim exists on PATH
+but the repo has no browser-test harness to drive it, and adding one is out of scope per
+`plan.md`.
+
+So the criteria that only a human at a running app can settle are still open, and this task
+stays in `tasks/`. The highest-risk two, per the plan, are **step 6** (selling a whole position
+while its drawer is open — the close-and-explain path) and **step 4** (a deep link on a cold
+load, which a `useState`-only implementation appears to pass).
