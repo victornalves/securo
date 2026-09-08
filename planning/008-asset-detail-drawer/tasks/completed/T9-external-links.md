@@ -4,7 +4,7 @@
 | ---------- | ------ |
 | Task       | T9     |
 | Feature    | 008    |
-| Status     | Todo   |
+| Status     | Done   |
 | Depends on | T2, T4 |
 | PR         |        |
 | Jira       |        |
@@ -64,3 +64,20 @@ links appear, resolve to the right instrument, and are absent where required.
 ## Notes
 
 Use `dropdown-menu.tsx` from `components/ui/` rather than hand-rolling a popover.
+
+## Outcome
+
+`ExternalLinksMenu.tsx`, in the drawer header beside the close button, built on the existing
+`components/ui/dropdown-menu` rather than a hand-rolled popover. Renders `null` when
+`externalLinksFor` returns `[]`, so a manual asset or a Tesouro Direto bond shows no affordance
+at all — not a disabled one.
+
+The menu carries a label saying it opens a third-party site in a new tab, so the destination
+cannot be mistaken for a Securo screen. Every anchor has `target="_blank"` and
+`rel="noreferrer"`, matching `token-connect-dialog.tsx` and `oauth-callback.tsx`.
+
+The URL construction and all four exclusions were already covered by T2's tests, so this task
+added no new ones — it is markup over a tested function.
+
+Two locale keys across nine files. Provider names (Yahoo Finance, TradingView, Google) are
+proper nouns and stay untranslated.

@@ -1009,6 +1009,8 @@
     "filterAll": "Tutte",
     "positionAfter": "Posizione dopo: {{units}}",
     "noMatchingTx": "Nessuna transazione corrisponde a questo filtro.",
+    "externalLinks": "Ricerca",
+    "externalLinksHint": "Apre un sito di terze parti in una nuova scheda.",
     "unitsShort": "un",
     "avgPriceShort": "PM",
     "tabHoldings": "Portafoglio",

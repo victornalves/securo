@@ -1081,6 +1081,8 @@
     "filterAll": "Wszystkie",
     "positionAfter": "Pozycja po: {{units}}",
     "noMatchingTx": "Żadna transakcja nie pasuje do tego filtra.",
+    "externalLinks": "Analiza",
+    "externalLinksHint": "Otwiera witrynę zewnętrzną w nowej karcie.",
     "unitsShort": "szt",
     "avgPriceShort": "śr",
     "tabHoldings": "Portfel",

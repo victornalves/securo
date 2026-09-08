@@ -10,6 +10,7 @@ import { AssetIcon } from './AssetIcon'
 import { getTypeConfig } from './asset-types'
 import { AssetDetail } from './AssetDetail'
 import { HoldingLedger } from './HoldingLedger'
+import { ExternalLinksMenu } from './ExternalLinksMenu'
 import { PositionSummary } from './PositionSummary'
 import { BoughtSoldBar } from './BoughtSoldBar'
 
@@ -182,13 +183,16 @@ export function AssetDetailDrawer({
                   </p>
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                title={t('common.close')}
-              >
-                <X size={16} />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <ExternalLinksMenu asset={asset} />
+                <button
+                  onClick={onClose}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                  title={t('common.close')}
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             {/* Two separately labelled actions, so recording a sale is as

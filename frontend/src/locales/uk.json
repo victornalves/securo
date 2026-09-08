@@ -1009,6 +1009,8 @@
     "filterAll": "Усі",
     "positionAfter": "Позиція після: {{units}}",
     "noMatchingTx": "Немає транзакцій, що відповідають фільтру.",
+    "externalLinks": "Аналітика",
+    "externalLinksHint": "Відкриє сторонній сайт у новій вкладці.",
     "unitsShort": "од.",
     "avgPriceShort": "сер.",
     "tabHoldings": "Позиції",

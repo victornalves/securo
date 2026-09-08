@@ -1009,6 +1009,8 @@
     "filterAll": "Toutes",
     "positionAfter": "Position après : {{units}}",
     "noMatchingTx": "Aucune transaction ne correspond à ce filtre.",
+    "externalLinks": "Rechercher",
+    "externalLinksHint": "Ouvre un site tiers dans un nouvel onglet.",
     "unitsShort": "unités",
     "avgPriceShort": "moy.",
     "tabHoldings": "Positions",
