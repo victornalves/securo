@@ -4,7 +4,7 @@
 | ------------ | ---------- |
 | ID           | 008        |
 | Status       | Approved   |
-| Version      | 1.1.0      |
+| Version      | 1.2.0      |
 | Spec         | ./spec.md  |
 | Last updated | 2026-09-08 |
 
@@ -109,6 +109,29 @@ them and a page module cannot export them without becoming a component library.
 - **Consequences:** one more refetch pair per trade than strictly necessary when the chart is not
   rendered. Accepted: correctness of a visible figure over a saved request. The existing query keys
   stay unchanged, so the holdings table and the global tab keep working through the same cache.
+
+### Decision: the price-comparison chart baselines on the average, not on zero
+
+- **Context:** the request was a bar chart of unit price per trade, to compare the prices practiced
+  over time. Taken literally — bars rising from zero — it fails on real data: FIQE3's three trades
+  at 5.61, 5.61 and 5.26 against a 5.5966 average produce three bars of visually identical height
+  on an axis running to 5.61. The variation the chart exists to show is about 6% of the bar length.
+- **Decision:** each bar encodes `price − average_price`, with the baseline drawn and labelled as
+  the average price in currency. Colour carries buy/sell; the bar's direction carries above/below
+  average. The tooltip gives the absolute unit price, the fee-inclusive effective unit price when a
+  fee makes them differ, and the signed distance from the average.
+- **Alternatives considered:** *zero-based bars* — truthful but uninformative here, as above.
+  *Absolute prices on a zoomed axis* — this is the one to be wary of: a bar's length encodes its
+  value, so cutting the axis at, say, 5.2 would make 5.26 look half of 5.61. Moving the baseline to
+  a **meaningful reference** avoids that, because the length then encodes the deviation, which is
+  what it is drawn from. *A line or dot plot* — legitimately zoomable, and considered; bars were
+  asked for and, once baselined on the average, encode the deviation honestly.
+- **Consequences:** the Y axis reads in deviations, not prices, so the average must always be
+  labelled with its value — an unlabelled baseline would be read as zero and every figure
+  misinterpreted. The chart needs `average_price`, so it cannot render for a fully exited position;
+  that is accepted, since such a drawer leads with realized gain instead. Most trades sit near the
+  baseline by construction (the average is derived from them), which makes the chart an outlier
+  detector — a useful reading, and worth knowing is what it is.
 
 ### Decision: select the body by `isLedgerBacked`, not by `valuation_method`
 
@@ -410,6 +433,7 @@ parity), plus lint and typecheck.
 
 | Version | Date       | Author       | Change       |
 | ------- | ---------- | ------------ | ------------ |
+| 1.2.0   | 2026-09-08 | Victor Alves | Adds the ADR on baselining the price-comparison chart on the average price rather than zero. See spec 1.2.0. |
 | 1.1.0   | 2026-09-08 | Victor Alves | Adds the ADR on selecting the drawer body by `isLedgerBacked` rather than `valuation_method`, after QA showed the original premise was false for the entire live portfolio. See spec 1.1.0 (D14, D15). |
 | 1.0.0   | 2026-09-08 | Victor Alves | Approved as written. The flagged decision inside `cumulativeCostSeries` — subtracting average cost on a sale — is settled by this approval and stands; the cumulative-net-cash fallback stays recorded in the ADR but is not the chosen path. |
 | 0.1.0   | 2026-09-08 | Victor Alves | Initial plan. Nine ADRs. Two findings from reading the code shaped it: trade mutations never refetch `asset-trend` / `asset-values` even though `_apply_price_to_asset` rewrites the value series, so invalidation is centralized; and `AssetTransaction` carries no `created_at`, so same-day running-position order is a stated limitation. One decision — average-cost subtraction inside `cumulativeCostSeries` — is flagged for the approval discussion with a stated fallback. |

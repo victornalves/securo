@@ -7,6 +7,7 @@ import {
   hasFilterableTicker,
   isLedgerBacked,
   runningPositions,
+  tradePriceSeries,
 } from './asset-detail-utils'
 import type { Asset, AssetTransaction } from '@/types'
 
@@ -225,6 +226,54 @@ describe('externalLinksFor', () => {
   it('offers nothing for an asset with no ticker', () => {
     expect(externalLinksFor(asset({ ticker: null }))).toEqual([])
     expect(externalLinksFor(asset({ ticker: '   ' }))).toEqual([])
+  })
+})
+
+describe('tradePriceSeries', () => {
+  // FIQE3's real ledger: two trades at 5.61 and one at 5.26, average 5.596619.
+  const fiqe3 = [
+    tx({ id: 't1', kind: 'buy', quantity: 300, price: 5.61, fee: 0.5, date: '2026-07-21' }),
+    tx({ id: 't2', kind: 'buy', quantity: 34, price: 5.61, fee: 0.06, date: '2026-07-21' }),
+    tx({ id: 't3', kind: 'buy', quantity: 15, price: 5.26, fee: 0.02, date: '2026-08-06' }),
+  ]
+
+  it('orders oldest first, so the chart reads left to right as time', () => {
+    const series = tradePriceSeries([...fiqe3].reverse(), 5.596619)
+    expect(series.map((p) => p.date)).toEqual(['2026-07-21', '2026-07-21', '2026-08-06'])
+  })
+
+  it('measures each trade against the holding average, not against zero', () => {
+    const series = tradePriceSeries(fiqe3, 5.596619)
+    expect(series[0].deviation).toBeCloseTo(0.013381, 6)
+    expect(series[2].deviation).toBeCloseTo(-0.336619, 6)
+  })
+
+  it('reports the effective unit price with the fee folded in', () => {
+    const series = tradePriceSeries(fiqe3, 5.596619)
+    // 15 * 5.26 + 0.02 = 78.92, over 15 units.
+    expect(series[2].effectivePrice).toBeCloseTo(78.92 / 15, 10)
+    expect(series[2].price).toBe(5.26)
+  })
+
+  it('lowers a sale\'s effective price by its fee, matching the fee convention', () => {
+    const [sale] = tradePriceSeries(
+      [tx({ id: 's', kind: 'sell', quantity: 10, price: 6, fee: 2, date: '2026-09-01' })],
+      5.5,
+    )
+    expect(sale.effectivePrice).toBeCloseTo((10 * 6 - 2) / 10, 10)
+  })
+
+  it('does not divide by a zero quantity', () => {
+    const [zero] = tradePriceSeries(
+      [tx({ id: 'z', kind: 'buy', quantity: 0, price: 4, fee: 1, date: '2026-09-01' })],
+      4,
+    )
+    expect(Number.isFinite(zero.effectivePrice)).toBe(true)
+    expect(zero.effectivePrice).toBe(4)
+  })
+
+  it('returns nothing for an empty ledger', () => {
+    expect(tradePriceSeries([], 5)).toEqual([])
   })
 })
 

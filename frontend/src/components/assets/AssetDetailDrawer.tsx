@@ -15,6 +15,7 @@ import { isLedgerBacked } from '@/lib/asset-detail-utils'
 import { hasOpenOverlayLayer, isInsideOverlayLayer } from '@/lib/overlay-dismiss'
 import { PositionSummary } from './PositionSummary'
 import { BoughtSoldBar } from './BoughtSoldBar'
+import { TradePriceChart } from './TradePriceChart'
 
 /**
  * The single detail surface for one holding.
@@ -284,6 +285,13 @@ export function AssetDetailDrawer({
                       chartOnly
                     />
                   )}
+                  <TradePriceChart
+                    txs={txs ?? []}
+                    averagePrice={asset.average_price}
+                    currency={asset.currency}
+                    locale={locale}
+                    dateLocale={dateLocale}
+                  />
                   <HoldingLedger
                     asset={asset}
                     locale={locale}

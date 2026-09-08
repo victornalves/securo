@@ -5,7 +5,7 @@
 | ID           | 008          |
 | Type         | Feature      |
 | Status       | Approved     |
-| Version      | 1.1.1        |
+| Version      | 1.2.0        |
 | Author       | Victor Alves |
 | Last updated | 2026-09-08   |
 | Jira         | —            |
@@ -83,6 +83,8 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
   the global `Transactions` tab.
 - Give the user a path to third-party information about a market-traded holding, without Securo
   fetching, storing, or implying ownership of that information.
+- Let a user compare the unit prices they actually practiced across a holding's trades, so the
+  question "am I buying this well?" has a visual answer rather than a column of numbers.
 
 ## Non-Goals
 
@@ -221,6 +223,25 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
 - [ ] The chart is omitted when there are fewer than two value points, as `chartOnly` mode already
       does, and its absence does not leave a gap or an empty frame in the drawer.
 - [ ] The cost series is absent, rather than drawn flat at zero, for a holding with no trades.
+
+**Price comparison across trades**
+
+- [ ] The drawer charts the unit price of each trade, one mark per trade, oldest to newest, so the
+      progression reads left to right as time.
+- [ ] The marks are measured against the holding's **average price**, which is drawn as the baseline
+      and labelled with its value in currency, so it cannot be mistaken for zero. A zero baseline is
+      not acceptable here: real unit prices cluster within a few percent of each other, and on a
+      zero-based axis the comparison the chart exists for is invisible.
+- [ ] Buys and sells are distinguishable by the ledger's own colour vocabulary, which does not
+      double up with the above/below-average information the mark's direction already carries.
+- [ ] Hovering a trade gives its date, direction, quantity, unit price as practiced, the unit price
+      once its fee is counted (shown only when a fee makes the two differ), and its distance from the
+      average.
+- [ ] The average price is read from the API. No weighted average is computed in the browser.
+- [ ] The chart is omitted, not emptied, when there is nothing to compare: fewer than two trades, or
+      no average price (a fully exited position has none, so it has no baseline).
+- [ ] The chart shows every trade regardless of the ledger's direction filter — the average line
+      describes all of them, and hiding half would leave it describing marks that are not on screen.
 
 **Per-asset trade list**
 
@@ -398,6 +419,7 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
 
 | Version | Date       | Author       | Change        |
 | ------- | ---------- | ------------ | ------------- |
+| 1.2.0   | 2026-09-08 | Victor Alves | Adds the per-trade unit-price comparison (new goal + criteria above), requested after using the drawer. Its baseline is the holding's average price rather than zero — with the live data (three trades at 5.61, 5.61 and 5.26 against an average of 5.5966) a zero-based bar chart renders three indistinguishable bars, so the literal reading of the request would have produced a chart that answers nothing. |
 | 1.1.1   | 2026-09-08 | Victor Alves | QA: a dialog opened from inside the drawer dismissed the drawer as well. The outside-click and Escape handlers treated Radix's portalled layers as "outside", which is true of the DOM and false of the interaction. Adds the criterion above. |
 | 1.1.0   | 2026-09-08 | Victor Alves | **Premise correction found in QA.** D2 and D12 assumed that only `market_price` assets carry a trade ledger — "every asset that enters the ledger through Securo's own flows is market-priced". That is false: `add_transaction` never checks `valuation_method`, and in the live database **all 18 active assets are `manual` with trades**, so the drawer's ledger body would never have appeared for that portfolio at all. Adds D14 (ledger shown when trades drive the figures, using the backend's own `average_price != None` signal; hybrids get both bodies) and D15 (trade actions wherever the ledger shows). Also extends the fix to the global tab's holding selector, which was keyed on the same wrong predicate and was therefore empty — leaving "new ticker" as the only way to add a trade, which would have created a duplicate asset. |
 | 1.0.0   | 2026-09-08 | Victor Alves | Approved. Three open questions closed into decisions: external destinations are Yahoo Finance, Google Search and TradingView with one set for every asset type (D10, D11 — Google Finance deep links rejected because they need exchange codes Securo does not hold, and no crypto-specific provider is added), the global tab's asset filter is ticker-scoped (D12 — which still covers Tesouro Direto bonds, whose synthetic `TD:` symbol is a valid filter key but not an externally linkable one), and the drawer is URL-addressable (D13 — a considered divergence from `TransactionDrillDown`). Extending the ledger to manual assets moves to backlog item 009. Drawer width and the cash-transaction link stay open as presentation-level questions for planning. |

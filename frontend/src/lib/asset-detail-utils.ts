@@ -145,6 +145,52 @@ export function cumulativeCostSeries(
   return series
 }
 
+export type TradePricePoint = {
+  id: string
+  date: string
+  kind: 'buy' | 'sell'
+  quantity: number
+  /** Unit price as transacted — the price practiced in the market. */
+  price: number
+  /** What the unit actually cost or returned once the fee is counted. */
+  effectivePrice: number
+  /** Signed distance from the holding's average price. */
+  deviation: number
+}
+
+/**
+ * Unit prices per trade, oldest first, for comparing what was practiced over
+ * the life of the holding.
+ *
+ * `deviation` is relative to the holding's average price rather than to zero,
+ * and that is the point of the whole series. Real unit prices cluster: three
+ * trades at 5.26, 5.61 and 5.61 against an average of 5.5966 are, on a
+ * zero-based axis, three indistinguishable bars — the chart would answer
+ * "how did the price move?" with nothing. Measured against the average, the
+ * same three trades read immediately as one bought well below cost and two at
+ * it. The baseline is a real, meaningful reference, so nothing is exaggerated
+ * by moving it there.
+ *
+ * `averagePrice` comes from the API (`_recompute`'s weighted average); it is
+ * never derived here.
+ */
+export function tradePriceSeries(
+  txs: AssetTransaction[],
+  averagePrice: number,
+): TradePricePoint[] {
+  return sortByDate(txs).map((tx) => ({
+    id: tx.id,
+    date: tx.date,
+    kind: tx.kind === 'sell' ? 'sell' : 'buy',
+    quantity: tx.quantity,
+    price: tx.price,
+    // Guard against a zero quantity, which the backend rejects but which would
+    // produce Infinity here if it ever reached the client.
+    effectivePrice: tx.quantity > 0 ? txTotal(tx) / tx.quantity : tx.price,
+    deviation: tx.price - averagePrice,
+  }))
+}
+
 /**
  * Is this holding driven by the trade ledger?
  *
