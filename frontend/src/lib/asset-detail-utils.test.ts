@@ -5,6 +5,7 @@ import {
   cumulativeCostSeries,
   externalLinksFor,
   hasFilterableTicker,
+  isLedgerBacked,
   runningPositions,
 } from './asset-detail-utils'
 import type { Asset, AssetTransaction } from '@/types'
@@ -224,6 +225,42 @@ describe('externalLinksFor', () => {
   it('offers nothing for an asset with no ticker', () => {
     expect(externalLinksFor(asset({ ticker: null }))).toEqual([])
     expect(externalLinksFor(asset({ ticker: '   ' }))).toEqual([])
+  })
+})
+
+describe('isLedgerBacked', () => {
+  it('is true for a manual asset that carries trades', () => {
+    // The real case this exists for: valuation_method 'manual', three trades,
+    // recompute_and_cache having already derived units and average price.
+    expect(
+      isLedgerBacked(asset({
+        valuation_method: 'manual',
+        transaction_count: 3,
+        average_price: 5.596619,
+      })),
+    ).toBe(true)
+  })
+
+  it('is true for a closed-out ledger with no remaining units', () => {
+    expect(isLedgerBacked(asset({ transaction_count: 4, average_price: null }))).toBe(true)
+  })
+
+  it('falls back to average_price when the count is absent', () => {
+    expect(isLedgerBacked(asset({ transaction_count: 0, average_price: 12.5 }))).toBe(true)
+  })
+
+  it('is false for a plain manual asset with no trades', () => {
+    expect(
+      isLedgerBacked(asset({ valuation_method: 'manual', transaction_count: 0, average_price: null })),
+    ).toBe(false)
+  })
+
+  it('does not depend on valuation_method', () => {
+    // A market-priced asset with no trades yet is not ledger-backed; the drawer
+    // shows it the ledger anyway, but on the strength of its valuation method.
+    expect(
+      isLedgerBacked(asset({ valuation_method: 'market_price', transaction_count: 0, average_price: null })),
+    ).toBe(false)
   })
 })
 

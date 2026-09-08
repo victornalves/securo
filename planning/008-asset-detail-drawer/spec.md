@@ -5,7 +5,7 @@
 | ID           | 008          |
 | Type         | Feature      |
 | Status       | Approved     |
-| Version      | 1.0.0        |
+| Version      | 1.1.0        |
 | Author       | Victor Alves |
 | Last updated | 2026-09-08   |
 | Jira         | —            |
@@ -89,11 +89,17 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
 - Any backend change: no new endpoint, no change to an existing response shape, no change to how
   `average_price`, `realized_gain`, `total_invested` or `gain_loss` are computed, and no migration.
   If the work turns out to need one, this spec is wrong and gets revised rather than stretched.
-- Enabling the buy/sell ledger on `manual` and `growth_rule` assets. `add_transaction` would accept
-  it — it does not check `valuation_method` — but `recompute_and_cache` then overwrites `units`,
-  `average_price`, `purchase_price` and `purchase_date` from the replayed ledger, and for a
-  non-market asset it also skips `_apply_price_to_asset`. That collision with the manual valuation
-  flow is a backend question, not a frontend one (see Open Questions).
+- **Amended in 1.1.0.** *Originally:* "Enabling the buy/sell ledger on `manual` and `growth_rule`
+  assets." That conflated two different things, and QA showed the distinction matters — every active
+  asset in the live database is a `manual` one that already has trades. Split as follows:
+  - **Out of scope:** *starting* a ledger on a `manual` or `growth_rule` asset that has none.
+    `add_transaction` would accept it, but `recompute_and_cache` would then overwrite `units`,
+    `average_price`, `purchase_price` and `purchase_date` from the replayed ledger while skipping
+    `_apply_price_to_asset` for a non-market asset. That collision is a backend question — backlog
+    item 009.
+  - **In scope (D14, D15):** *showing and continuing* a ledger that already exists on such an asset.
+    The overwrite above has already happened there; hiding the ledger does not undo it, it only
+    makes the figures unexplainable.
 - Recomputing cost basis, average price, or realized gain in the browser.
   `asset_transaction_service._recompute` is the single authority: weighted-average cost, fees added
   to cost on a buy and subtracted from realized gain on a sell, oversell clamped defensively. A
@@ -232,8 +238,18 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
 
 **Manual and growth-rule assets**
 
-- [ ] Opening the drawer for a `manual` or `growth_rule` asset shows valuation history, not a trade
-      ledger, and offers no purchase or sale action.
+- [ ] Opening the drawer for a `manual` or `growth_rule` asset **that has no trades** shows valuation
+      history, not a trade ledger, and offers no purchase or sale action.
+- [ ] Opening the drawer for a **hybrid** holding — any asset whose figures are ledger-derived but
+      whose valuation method is not `market_price` — shows **both**: the position summary, the
+      bought/sold comparison and the trade ledger, followed by the valuation controls and history.
+- [ ] The hybrid case states which half governs what: trades set the position, valuations set the
+      current value. Two blocks that would otherwise read as contradicting each other.
+- [ ] A hybrid holding offers the purchase and sale actions.
+- [ ] The predicate deciding this is not `valuation_method`. A test pins it against a holding with
+      `valuation_method: 'manual'`, a non-zero transaction count and a derived average price.
+- [ ] The global tab's holding selector offers every holding a trade can be recorded against, by the
+      same predicate — not only market-priced ones.
 - [ ] The revaluation control names what it does — recording what the asset is worth on a date —
       distinctly enough that it is not read as recording a purchase.
 - [ ] A negative revaluation amount is rejected in the UI, with a message that says a disposal is
@@ -300,7 +316,7 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
 | #  | Decision |
 | -- | -------- |
 | D1 | The drawer **replaces** the inline row expansion. One detail surface per holding, not two: keeping both would mean maintaining the chart and the ledger in two layouts and would leave the user two different answers to the same click. |
-| D2 | `manual` and `growth_rule` assets **get the drawer**, with a valuation-history body instead of a ledger, and with no buy/sell action. The drawer becomes the single answer to "what is this holding?" for every asset type, while the *content* stays honest about the fact that a revaluation is not a trade. Extending the ledger to those types is explicitly deferred (Open Questions). |
+| D2 | *(amended in 1.1.0 — see D14. The original text read: `manual` and `growth_rule` assets get a valuation-history body instead of a ledger, and no buy/sell action. That rested on a premise about the data that turned out to be false.)* `manual` and `growth_rule` assets **get the drawer**, with a valuation-history body instead of a ledger, and with no buy/sell action. The drawer becomes the single answer to "what is this holding?" for every asset type, while the *content* stays honest about the fact that a revaluation is not a trade. Extending the ledger to those types is explicitly deferred (Open Questions). |
 | D3 | The drawer shows **two distinct primary actions** for a ledger-backed holding — purchase and sale — rather than one action plus a type toggle inside the form. The toggle stays in the form for editing an existing trade; it is no longer the only way to *discover* that selling exists. |
 | D4 | The chart is **market value plus cumulative cost**, over the existing value-trend series, with the existing trade markers. The gap between the two lines is the unrealized gain, which turns the return percentage into something the user can see. Cumulative cost is derived from the asset's own ledger in the client — it is a running sum of stored figures, not a re-derivation of average cost. |
 | D5 | Per-asset figures are **read from the API, never recomputed**. `_recompute` is the single authority on cost basis, average price and realized gain. The only client-side derivations permitted are ones that cannot diverge from it: a running quantity (sum of signed quantities) and the bought/sold aggregates (sums of stored `quantity`, `price`, `fee`). |
@@ -311,6 +327,8 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
 | D10 | The external destinations are **Yahoo Finance**, **Google Search**, and **TradingView** — three URLs that are constructible from the stored ticker alone, with no exchange-code mapping table. Yahoo is the exact-match link: quotes come from `yfinance`, so `Asset.ticker` *is* a Yahoo symbol (`AAPL`, `PETR4.SA`, `HGLG11.SA`, `BTC-USD`) and needs no translation. Google Search is the universal one — it cannot 404, and Google's own finance card renders at the top of the results. TradingView covers charts and indicators, using the symbol with the Yahoo market suffix stripped. **Google Finance deep links are rejected**: `/finance/quote/{SYMBOL}:{EXCHANGE}` requires Google's own exchange codes (`BVMF`, `NASDAQ`), while `ticker_exchange` holds Yahoo's display strings (`exchDisp` / `exchange`, e.g. `NasdaqGS`, `São Paulo`) — any mapping between the two would be a permanent source of silent 404s, and Google Search serves the same intent with no mapping at all. |
 | D11 | The same three destinations serve **equities, ETFs and funds/FIIs** — the portfolio's actual composition — with no per-type provider set. Crypto needs no fourth provider either: Yahoo resolves `BTC-USD` and TradingView resolves crypto symbols directly. A crypto-native source (CoinGecko, on-chain supply data) is deliberately not added, because those are addressed by slug (`bitcoin`), not by ticker, and would reintroduce exactly the mapping table D10 rejects. |
 | D12 | The global tab's asset filter is **scoped to the stored `ticker`**, and an asset without one is not reachable through it. This costs nothing in practice: every asset that enters the ledger through Securo's own flows is market-priced and carries a ticker, including Tesouro Direto bonds — `TD:<hash>:<maturity>` is a synthetic symbol, meaningless outside Securo but a perfectly good filter key inside it. So TD bonds are **filterable** (D12) and **not externally linkable** (D10); those are two different properties of the same string and the code must not conflate them. |
+| D14 | **A holding shows its ledger when trades drive its figures, not when `valuation_method == 'market_price'`.** This supersedes the reading of D2 and D12 that a non-market asset never has a ledger. `add_transaction` does not check `valuation_method`, so a `manual` asset can carry a full ledger: `recompute_and_cache` then derives `units`, `average_price` and a cost-basis `purchase_price` from those trades, while the asset's *current value* still comes from `AssetValue` entries because `_apply_price_to_asset` is skipped for non-market assets. Such a holding is a **hybrid** and gets both bodies, with a line naming which half does what. The predicate is the one the backend already uses and names — `asset_service._asset_to_read`: "`average_price != None` is the signal that the holding is driven by the transactions ledger". |
+| D15 | Buy and sell actions are offered wherever the ledger is shown — so a hybrid can record trades, because its figures are *already* ledger-derived and refusing to show the control would not undo that. A `manual` asset with **no** ledger still gets none; whether one may be started there remains backlog item 009. |
 | D13 | The drawer is **addressable by URL** (`?asset=<id>`), so it survives a reload and responds to the back button. This diverges from `TransactionDrillDown`, deliberately: a holding is a durable object worth linking to, while a drill-down is a transient decomposition of a chart slice. The divergence is a considered difference between two kinds of drawer, not an inconsistency to be reconciled later. |
 
 **Existing behavior this must not break:**
@@ -376,5 +394,6 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
 
 | Version | Date       | Author       | Change        |
 | ------- | ---------- | ------------ | ------------- |
+| 1.1.0   | 2026-09-08 | Victor Alves | **Premise correction found in QA.** D2 and D12 assumed that only `market_price` assets carry a trade ledger — "every asset that enters the ledger through Securo's own flows is market-priced". That is false: `add_transaction` never checks `valuation_method`, and in the live database **all 18 active assets are `manual` with trades**, so the drawer's ledger body would never have appeared for that portfolio at all. Adds D14 (ledger shown when trades drive the figures, using the backend's own `average_price != None` signal; hybrids get both bodies) and D15 (trade actions wherever the ledger shows). Also extends the fix to the global tab's holding selector, which was keyed on the same wrong predicate and was therefore empty — leaving "new ticker" as the only way to add a trade, which would have created a duplicate asset. |
 | 1.0.0   | 2026-09-08 | Victor Alves | Approved. Three open questions closed into decisions: external destinations are Yahoo Finance, Google Search and TradingView with one set for every asset type (D10, D11 — Google Finance deep links rejected because they need exchange codes Securo does not hold, and no crypto-specific provider is added), the global tab's asset filter is ticker-scoped (D12 — which still covers Tesouro Direto bonds, whose synthetic `TD:` symbol is a valid filter key but not an externally linkable one), and the drawer is URL-addressable (D13 — a considered divergence from `TransactionDrillDown`). Extending the ledger to manual assets moves to backlog item 009. Drawer width and the cash-transaction link stay open as presentation-level questions for planning. |
 | 0.1.0   | 2026-09-08 | Victor Alves | Initial draft. Nine decisions locked up front: drawer replaces the inline expansion (D1), manual assets get a valuation-history body and no ledger (D2), separate buy and sell actions (D3), market-value-plus-cumulative-cost chart (D4), no client-side cost-basis math (D5), external providers linked and never read (D6), global tab filters in scope (D7) and server-side (D8), no backend change (D9). |

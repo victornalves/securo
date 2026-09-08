@@ -1013,6 +1013,7 @@
     "externalLinksHint": "Opens a third-party site in a new tab.",
     "recordValuation": "Record a valuation",
     "valuationExplainer": "What this asset is worth on a date. It replaces the previous valuation — it does not record a purchase or a sale.",
+    "hybridValuationNote": "Units and average price come from the trades above. This asset has no live quote, so its current value comes from the valuations you record here.",
     "valuationAmount": "Worth on this date",
     "asOfDate": "As of",
     "saveValuation": "Save valuation",

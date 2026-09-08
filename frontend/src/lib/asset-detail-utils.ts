@@ -146,6 +146,32 @@ export function cumulativeCostSeries(
 }
 
 /**
+ * Is this holding driven by the trade ledger?
+ *
+ * Uses the same signal the backend uses. `asset_service._asset_to_read` says
+ * it outright — "`average_price != None` is the signal that the holding is
+ * driven by the transactions ledger" — and that is *not* the same thing as
+ * `valuation_method === 'market_price'`.
+ *
+ * A `manual` asset can carry a full ledger: `add_transaction` never checks
+ * `valuation_method`, so recording trades against one runs
+ * `recompute_and_cache` and leaves `units`, `average_price` and a cost-basis
+ * `purchase_price` derived from those trades, while its *current value* still
+ * comes from `AssetValue` entries because `_apply_price_to_asset` is skipped
+ * for non-market assets. Such a holding is a hybrid, and keying the UI on
+ * `valuation_method` hides the very trades that produced its figures.
+ *
+ * `transaction_count` is checked first because it is the direct fact; the
+ * `average_price` fallback covers a ledger whose position has been fully
+ * closed out.
+ */
+export function isLedgerBacked(
+  asset: Pick<Asset, 'transaction_count' | 'average_price'>,
+): boolean {
+  return (asset.transaction_count ?? 0) > 0 || asset.average_price != null
+}
+
+/**
  * Can this asset be selected in the global transactions tab's filter?
  *
  * Keyed on the stored ticker, which every asset entering the ledger through

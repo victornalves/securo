@@ -61,7 +61,7 @@ import { getTypeConfig } from '@/components/assets/asset-types'
 import { AssetDetailDrawer } from '@/components/assets/AssetDetailDrawer'
 import { AddHoldingTransactionDialog } from '@/components/assets/AddHoldingTransactionDialog'
 import { formatCurrency, formatRelativeTime, assetErrorMessage } from '@/components/assets/asset-format'
-import { txTotal, hasFilterableTicker } from '@/lib/asset-detail-utils'
+import { txTotal, hasFilterableTicker, isLedgerBacked } from '@/lib/asset-detail-utils'
 
 const ASSET_TYPES = [
   'stock',
@@ -2000,15 +2000,24 @@ function AssetTransactionsTab({
   // rather than offering a click that does nothing.
   const openableAssetIds = useMemo(() => new Set(holdings.map((h) => h.id)), [holdings])
 
-  const marketHoldings = useMemo(
-    () => holdings.filter((h) => h.valuation_method === 'market_price' && !h.sell_date),
+  // Holdings a trade can be recorded against. Keyed on whether the ledger
+  // drives the holding — NOT on `valuation_method`: a `manual` asset can carry
+  // a full ledger, and filtering on the method left this dropdown empty for
+  // any portfolio built that way, so an existing holding could not be picked
+  // and "new ticker" was the only option — which would have created a
+  // duplicate. See `isLedgerBacked`.
+  const tradableHoldings = useMemo(
+    () =>
+      holdings.filter(
+        (h) => (isLedgerBacked(h) || h.valuation_method === 'market_price') && !h.sell_date,
+      ),
     [holdings],
   )
-  // Market holdings that exist but have no recorded buys → flagged in amber so
-  // the user knows their average price / return can't be computed yet.
+  // Tradable holdings with units but no recorded cost → flagged in amber, since
+  // their average price and return cannot be computed until buys are added.
   const holdingsWithoutCost = useMemo(
-    () => marketHoldings.filter((h) => h.average_price == null && h.units != null),
-    [marketHoldings],
+    () => tradableHoldings.filter((h) => h.average_price == null && h.units != null),
+    [tradableHoldings],
   )
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -2080,7 +2089,7 @@ function AssetTransactionsTab({
   function openAdd() {
     setEditingTx(null)
     setFormKind('buy')
-    setFormHolding(marketHoldings.length > 0 ? marketHoldings[0].id : '__new__')
+    setFormHolding(tradableHoldings.length > 0 ? tradableHoldings[0].id : '__new__')
     setFormTicker('')
     setFormGroupId('')
     setFormQuantity('')
@@ -2117,7 +2126,7 @@ function AssetTransactionsTab({
   const isNewTicker = !editingTx && formHolding === '__new__'
   // Warn before a sell that exceeds the held quantity (no shorting). Only on a
   // fresh sell into an existing holding; edits are validated server-side.
-  const selectedHeldUnits = marketHoldings.find((h) => h.id === formHolding)?.units ?? 0
+  const selectedHeldUnits = tradableHoldings.find((h) => h.id === formHolding)?.units ?? 0
   const oversell =
     !editingTx && !isNewTicker && formKind === 'sell' && !!formQuantity && parseFloat(formQuantity) > selectedHeldUnits
   const canSave =
@@ -2317,7 +2326,7 @@ function AssetTransactionsTab({
                   }}
                 >
                   <option value="__new__">{t('assets.newTicker')}</option>
-                  {marketHoldings.map((h) => (
+                  {tradableHoldings.map((h) => (
                     <option key={h.id} value={h.id}>
                       {h.ticker || h.name}
                     </option>

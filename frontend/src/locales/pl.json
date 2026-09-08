@@ -1085,6 +1085,7 @@
     "externalLinksHint": "Otwiera witrynę zewnętrzną w nowej karcie.",
     "recordValuation": "Zapisz wycenę",
     "valuationExplainer": "Ile ten składnik jest wart w danym dniu. Zastępuje poprzednią wycenę — nie zapisuje kupna ani sprzedaży.",
+    "hybridValuationNote": "Jednostki i cena średnia pochodzą z transakcji powyżej. Ten składnik nie ma automatycznej wyceny rynkowej, więc jego bieżąca wartość pochodzi z wycen zapisanych tutaj.",
     "valuationAmount": "Wartość w tym dniu",
     "asOfDate": "Na dzień",
     "saveValuation": "Zapisz wycenę",

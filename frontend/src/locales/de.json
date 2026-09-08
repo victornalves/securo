@@ -1013,6 +1013,7 @@
     "externalLinksHint": "Öffnet eine Website Dritter in einem neuen Tab.",
     "recordValuation": "Bewertung erfassen",
     "valuationExplainer": "Was dieser Vermögenswert zu einem Datum wert ist. Ersetzt die vorherige Bewertung — erfasst keinen Kauf und keinen Verkauf.",
+    "hybridValuationNote": "Einheiten und Durchschnittspreis stammen aus den Transaktionen oben. Dieser Vermögenswert hat keine automatische Kursabfrage, sein aktueller Wert stammt daher aus den hier erfassten Bewertungen.",
     "valuationAmount": "Wert an diesem Datum",
     "asOfDate": "Stand",
     "saveValuation": "Bewertung speichern",

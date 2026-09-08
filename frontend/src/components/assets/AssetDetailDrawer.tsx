@@ -11,6 +11,7 @@ import { getTypeConfig } from './asset-types'
 import { AssetDetail } from './AssetDetail'
 import { HoldingLedger } from './HoldingLedger'
 import { ExternalLinksMenu } from './ExternalLinksMenu'
+import { isLedgerBacked } from '@/lib/asset-detail-utils'
 import { PositionSummary } from './PositionSummary'
 import { BoughtSoldBar } from './BoughtSoldBar'
 
@@ -69,7 +70,7 @@ export function AssetDetailDrawer({
   const { data: txs } = useQuery({
     queryKey: ['asset-transactions', asset?.id],
     queryFn: () => assetsApi.transactions(asset!.id),
-    enabled: !!asset && asset.valuation_method === 'market_price',
+    enabled: !!asset && (asset.transaction_count ?? 0) > 0,
   })
 
   // Close on Escape
@@ -105,6 +106,18 @@ export function AssetDetailDrawer({
   // empty panel for the 200 ms of the transition.
   const config = asset ? getTypeConfig(asset.type) : null
   const isMarketPriced = asset?.valuation_method === 'market_price'
+  // Which body to show is decided by what actually drives the holding's
+  // figures, not by `valuation_method`. A `manual` asset can carry a full
+  // ledger — `add_transaction` never checks the valuation method — and keying
+  // on the method hid exactly the trades the user came to see.
+  const ledgerBacked = !!asset && isLedgerBacked(asset)
+  // Market-priced with no trades yet still gets the ledger, so the purchase
+  // action has somewhere to live.
+  const showLedger = ledgerBacked || isMarketPriced
+  // Without a live quote, the current value comes from AssetValue entries, so
+  // the valuation controls stay relevant even alongside a ledger.
+  const showValuation = !!asset && !isMarketPriced
+  const isHybrid = showLedger && showValuation
   const isSynced = !!asset && asset.source !== 'manual'
   // A provider-owned asset is read-only, matching the holdings table: synced
   // but not market-priced means the provider, not the user, owns its figures.
@@ -199,7 +212,7 @@ export function AssetDetailDrawer({
                 reachable as recording a purchase. Selling needs a position to
                 sell: the backend refuses a short (_raise_if_oversell), and
                 saying so here beats discovering it as a failed request. */}
-            {isMarketPriced && canWriteHere && (
+            {showLedger && canWriteHere && (
               <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0">
                 <Button
                   size="sm"
@@ -221,7 +234,7 @@ export function AssetDetailDrawer({
                 </Button>
               </div>
             )}
-            {isMarketPriced && canWriteHere && !canSell && (
+            {showLedger && canWriteHere && !canSell && (
               <p className="px-5 pb-3 text-[11px] text-muted-foreground shrink-0">
                 {t('assets.nothingToSell')}
               </p>
@@ -229,7 +242,7 @@ export function AssetDetailDrawer({
 
             {/* Body */}
             <div className="flex-1 overflow-auto">
-              {isMarketPriced ? (
+              {showLedger && (
                 <>
                   <PositionSummary
                     asset={asset}
@@ -245,17 +258,23 @@ export function AssetDetailDrawer({
                     currentValue={asset.current_value}
                     locale={locale}
                   />
-                  <AssetDetail
-                    assetId={asset.id}
-                    currency={asset.currency}
-                    locale={locale}
-                    dateLocale={dateLocale}
-                    purchasePrice={asset.purchase_price}
-                    purchaseDate={asset.purchase_date}
-                    valuationMethod={asset.valuation_method}
-                    canWrite={canWriteHere}
-                    chartOnly
-                  />
+                  {/* The value chart belongs to the market-priced case; a
+                      hybrid gets its chart from the valuation body below,
+                      which owns the AssetValue series that drives its value. */}
+                  {isMarketPriced && (
+                    <AssetDetail
+                      assetId={asset.id}
+                      currency={asset.currency}
+                      locale={locale}
+                      dateLocale={dateLocale}
+                      purchasePrice={asset.purchase_price}
+                      purchaseDate={asset.purchase_date}
+                      valuationMethod={asset.valuation_method}
+                      hasLedger={ledgerBacked}
+                      canWrite={canWriteHere}
+                      chartOnly
+                    />
+                  )}
                   <HoldingLedger
                     asset={asset}
                     locale={locale}
@@ -266,17 +285,28 @@ export function AssetDetailDrawer({
                     onChanged={onChanged}
                   />
                 </>
-              ) : (
-                <AssetDetail
-                  assetId={asset.id}
-                  currency={asset.currency}
-                  locale={locale}
-                  dateLocale={dateLocale}
-                  purchasePrice={asset.purchase_price}
-                  purchaseDate={asset.purchase_date}
-                  valuationMethod={asset.valuation_method}
-                  canWrite={canWriteHere}
-                />
+              )}
+              {showValuation && (
+                <>
+                  {/* Two blocks that could look contradictory otherwise: the
+                      trades set the position, the valuations set the value. */}
+                  {isHybrid && (
+                    <p className="px-5 pt-4 text-[11px] text-muted-foreground">
+                      {t('assets.hybridValuationNote')}
+                    </p>
+                  )}
+                  <AssetDetail
+                    assetId={asset.id}
+                    currency={asset.currency}
+                    locale={locale}
+                    dateLocale={dateLocale}
+                    purchasePrice={asset.purchase_price}
+                    purchaseDate={asset.purchase_date}
+                    valuationMethod={asset.valuation_method}
+                    hasLedger={ledgerBacked}
+                    canWrite={canWriteHere}
+                  />
+                </>
               )}
             </div>
           </>

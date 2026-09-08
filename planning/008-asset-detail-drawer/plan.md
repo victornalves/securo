@@ -4,7 +4,7 @@
 | ------------ | ---------- |
 | ID           | 008        |
 | Status       | Approved   |
-| Version      | 1.0.0      |
+| Version      | 1.1.0      |
 | Spec         | ./spec.md  |
 | Last updated | 2026-09-08 |
 
@@ -109,6 +109,31 @@ them and a page module cannot export them without becoming a component library.
 - **Consequences:** one more refetch pair per trade than strictly necessary when the chart is not
   rendered. Accepted: correctness of a visible figure over a saved request. The existing query keys
   stay unchanged, so the holdings table and the global tab keep working through the same cache.
+
+### Decision: select the body by `isLedgerBacked`, not by `valuation_method`
+
+- **Context:** the plan and spec both assumed `valuation_method === 'market_price'` was a usable
+  proxy for "this holding has a trade ledger". QA against the live database disproved it: all 18
+  active assets are `manual` *with* trades, because `add_transaction` never checks the valuation
+  method. `recompute_and_cache` then derives `units`, `average_price` and a cost-basis
+  `purchase_price` from those trades, while `_apply_price_to_asset` is skipped — so the current
+  value still comes from `AssetValue`. The drawer keyed on the method and therefore hid the very
+  trades the feature exists to surface.
+- **Decision:** `isLedgerBacked(asset)` = `transaction_count > 0 || average_price != null`, which is
+  the signal `asset_service._asset_to_read` already uses and names in a comment. The drawer shows
+  the ledger when `isLedgerBacked(asset) || valuation_method === 'market_price'` (the second
+  disjunct so a market asset with no trades yet still has somewhere to put the purchase action), and
+  the valuation body when the method is not `market_price` (its value genuinely comes from
+  `AssetValue`). Both can be true; that is a hybrid, and it gets a line saying trades set the
+  position while valuations set the value.
+- **Alternatives considered:** *treat a hybrid as market-priced* — it has no quote, so the position
+  summary would report a current price and an unrealized gain it cannot know. *Show only the ledger
+  for a hybrid* — its current value comes from valuations, so removing that control would leave the
+  value unmaintainable. *Migrate hybrids to `market_price`* — a backend data change, out of scope
+  here and not obviously correct: these assets may deliberately have no quote.
+- **Consequences:** three body compositions instead of two. `AssetDetail` takes a `hasLedger` prop,
+  because it can no longer infer from `valuationMethod` whether trade markers are worth fetching.
+  Backlog 009 is unaffected: it still governs whether a *tradeless* manual asset may start a ledger.
 
 ### Decision: `?asset=<id>` with the reports.tsx push-vs-replace discipline
 
@@ -385,5 +410,6 @@ parity), plus lint and typecheck.
 
 | Version | Date       | Author       | Change       |
 | ------- | ---------- | ------------ | ------------ |
+| 1.1.0   | 2026-09-08 | Victor Alves | Adds the ADR on selecting the drawer body by `isLedgerBacked` rather than `valuation_method`, after QA showed the original premise was false for the entire live portfolio. See spec 1.1.0 (D14, D15). |
 | 1.0.0   | 2026-09-08 | Victor Alves | Approved as written. The flagged decision inside `cumulativeCostSeries` — subtracting average cost on a sale — is settled by this approval and stands; the cumulative-net-cash fallback stays recorded in the ADR but is not the chosen path. |
 | 0.1.0   | 2026-09-08 | Victor Alves | Initial plan. Nine ADRs. Two findings from reading the code shaped it: trade mutations never refetch `asset-trend` / `asset-values` even though `_apply_price_to_asset` rewrites the value series, so invalidation is centralized; and `AssetTransaction` carries no `created_at`, so same-day running-position order is a stated limitation. One decision — average-cost subtraction inside `cumulativeCostSeries` — is flagged for the approval discussion with a stated fallback. |

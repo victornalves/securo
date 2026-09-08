@@ -1013,6 +1013,7 @@
     "externalLinksHint": "Ouvre un site tiers dans un nouvel onglet.",
     "recordValuation": "Enregistrer une valorisation",
     "valuationExplainer": "Ce que vaut cet actif à une date. Remplace la valorisation précédente — n’enregistre ni achat ni vente.",
+    "hybridValuationNote": "Les unités et le prix moyen proviennent des transactions ci-dessus. Cet actif n’a pas de cotation automatique : sa valeur actuelle provient des valorisations que vous saisissez ici.",
     "valuationAmount": "Valeur à cette date",
     "asOfDate": "Au",
     "saveValuation": "Enregistrer la valorisation",

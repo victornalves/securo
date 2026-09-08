@@ -47,10 +47,13 @@ function renderAssetTradeDot(props: {
   )
 }
 
-export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purchasePrice, purchaseDate, valuationMethod, canWrite, chartOnly = false }: {
+export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purchasePrice, purchaseDate, valuationMethod, hasLedger = false, canWrite, chartOnly = false }: {
   assetId: string; currency: string; locale: string; dateLocale: string
   purchasePrice: number | null; purchaseDate: string | null
   valuationMethod: string
+  /** Whether trades drive this holding — see `isLedgerBacked`. Not the same as
+      `valuationMethod === 'market_price'`: a manual asset can carry a ledger. */
+  hasLedger?: boolean
   canWrite: boolean
   // When true, render only the value-evolution chart (used above the ledger
   // for market-priced holdings) — no manual value form / value-history list.
@@ -94,7 +97,7 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
   const { data: assetTrades } = useQuery({
     queryKey: ['asset-transactions', assetId],
     queryFn: () => assets.transactions(assetId),
-    enabled: valuationMethod === 'market_price',
+    enabled: hasLedger || valuationMethod === 'market_price',
   })
   // Cumulative cost of the units still held, on the same axis as market value:
   // the gap between the two lines IS the unrealized gain at that point, which

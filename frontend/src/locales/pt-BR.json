@@ -1013,6 +1013,7 @@
     "externalLinksHint": "Abre um site de terceiros em uma nova aba.",
     "recordValuation": "Registrar avaliação",
     "valuationExplainer": "Quanto este ativo vale em uma data. Substitui a avaliação anterior — não registra compra nem venda.",
+    "hybridValuationNote": "As unidades e o preço médio vêm das transações acima. Este ativo não tem cotação automática, então o valor atual vem das avaliações que você registra aqui.",
     "valuationAmount": "Valor nesta data",
     "asOfDate": "Em",
     "saveValuation": "Salvar avaliação",
