@@ -1004,6 +1004,8 @@
     "recordSell": "Записати продаж",
     "nothingToSell": "Немає активів у портфелі — продавати поки нічого.",
     "txNotesPlaceholder": "Необов’язково",
+    "seriesMarketValue": "Ринкова вартість",
+    "seriesCostBasis": "Вартість купівлі",
     "unitsShort": "од.",
     "avgPriceShort": "сер.",
     "tabHoldings": "Позиції",

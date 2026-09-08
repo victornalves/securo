@@ -1004,6 +1004,8 @@
     "recordSell": "Записать продажу",
     "nothingToSell": "Нет активов в портфеле — продавать пока нечего.",
     "txNotesPlaceholder": "Необязательно",
+    "seriesMarketValue": "Рыночная стоимость",
+    "seriesCostBasis": "Стоимость покупки",
     "unitsShort": "ед.",
     "avgPriceShort": "ср.",
     "tabHoldings": "Позиции",

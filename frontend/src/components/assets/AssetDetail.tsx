@@ -22,9 +22,15 @@ import {
 import type { AssetTransaction, AssetValue } from '@/types'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { formatCurrency, assetErrorMessage } from './asset-format'
+import { cumulativeCostSeries } from '@/lib/asset-detail-utils'
 
 // Marker drawn on the value chart where a buy (green) or sell (red) happened.
 // Recharts calls this per data point; non-trade points render an empty group.
+// Cost basis is a reference line, not a signal: it must not borrow the
+// emerald/rose the value line uses to mean up or down. Slate-500 holds up on
+// both themes.
+const COST_SERIES_COLOR = '#64748B'
+
 function renderAssetTradeDot(props: {
   cx?: number; cy?: number; index?: number; payload?: { trades?: AssetTransaction[] }
 }) {
@@ -90,8 +96,23 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
     queryFn: () => assets.transactions(assetId),
     enabled: valuationMethod === 'market_price',
   })
+  // Cumulative cost of the units still held, on the same axis as market value:
+  // the gap between the two lines IS the unrealized gain at that point, which
+  // turns the return percentage into something visible (spec 008 D4). `null`
+  // for a tradeless holding, so the series is omitted rather than drawn flat
+  // at zero.
+  const costSeries = useMemo(
+    () => cumulativeCostSeries(trendWithPurchase, assetTrades ?? []),
+    [trendWithPurchase, assetTrades],
+  )
+  const hasCostSeries = !!costSeries
+
   const chartData = useMemo(() => {
-    const pts = trendWithPurchase.map(p => ({ ...p, trades: [] as AssetTransaction[] }))
+    const pts = trendWithPurchase.map((p, i) => ({
+      ...p,
+      trades: [] as AssetTransaction[],
+      cost: costSeries ? costSeries[i]?.cost : undefined,
+    }))
     if (!assetTrades || pts.length === 0) return pts
     for (const tx of assetTrades) {
       const txTime = new Date(tx.date + 'T00:00:00').getTime()
@@ -104,7 +125,7 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
       pts[best].trades.push(tx)
     }
     return pts
-  }, [trendWithPurchase, assetTrades])
+  }, [trendWithPurchase, assetTrades, costSeries])
 
   // Build value history with purchase as the initial entry
   const valuesWithPurchase = useMemo(() => {
@@ -166,7 +187,26 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
       {/* Value Trend Chart */}
       {hasChart && (
         <div>
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">{t('assets.valueTrend')}</p>
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{t('assets.valueTrend')}</p>
+            {hasCostSeries && (
+              <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-0.5 rounded-full" style={{ background: chartColor }} />
+                  {t('assets.seriesMarketValue')}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  {/* Dashed swatch, matching the line: the two series must be
+                      distinguishable without relying on colour alone. */}
+                  <span
+                    className="w-3 h-0 border-t border-dashed"
+                    style={{ borderColor: COST_SERIES_COLOR }}
+                  />
+                  {t('assets.seriesCostBasis')}
+                </span>
+              </div>
+            )}
+          </div>
           <div className="h-44 -mx-1">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
@@ -202,13 +242,25 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
                 <RechartsTooltip
                   content={({ active, payload, label }) => {
                     if (!active || !payload?.length) return null
-                    const pt = payload[0].payload as { amount?: number; trades?: AssetTransaction[] }
+                    const pt = payload[0].payload as { amount?: number; cost?: number; trades?: AssetTransaction[] }
                     return (
                       <div style={{ background: 'var(--card)', color: 'var(--foreground)', border: '1px solid var(--border)', borderRadius: '0.75rem', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '8px 10px' }}>
                         <p style={{ fontWeight: 600, marginBottom: 4 }}>
                           {new Date(String(label) + 'T00:00:00').toLocaleDateString(dateLoc, { day: 'numeric', month: 'long', year: 'numeric' })}
                         </p>
                         <div style={{ fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(pt.amount ?? 0, currency, loc))}</div>
+                        {pt.cost != null && (
+                          <>
+                            <div style={{ fontVariantNumeric: 'tabular-nums', fontSize: 11, color: 'var(--muted-foreground)' }}>
+                              {t('assets.seriesCostBasis')}: {mask(formatCurrency(pt.cost, currency, loc))}
+                            </div>
+                            {/* The gap between the lines, spelled out — it is the
+                                whole reason the second series is here. */}
+                            <div style={{ fontVariantNumeric: 'tabular-nums', fontSize: 11, fontWeight: 500, color: (pt.amount ?? 0) - pt.cost >= 0 ? '#10B981' : '#F43F5E' }}>
+                              {t('assets.unrealizedGain')}: {mask(formatCurrency((pt.amount ?? 0) - pt.cost, currency, loc))}
+                            </div>
+                          </>
+                        )}
                         {pt.trades?.map((tx) => (
                           <div key={tx.id} style={{ marginTop: 3, fontSize: 11, fontWeight: 500, color: tx.kind === 'buy' ? '#10B981' : '#F43F5E' }}>
                             {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')} {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, currency, loc))}
@@ -218,6 +270,18 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
                     )
                   }}
                 />
+                {hasCostSeries && (
+                  <Area
+                    type="monotone"
+                    dataKey="cost"
+                    stroke={COST_SERIES_COLOR}
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                    fill="none"
+                    dot={false}
+                    activeDot={false}
+                  />
+                )}
                 <Area
                   type="monotone"
                   dataKey="amount"

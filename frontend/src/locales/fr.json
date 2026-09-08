@@ -1004,6 +1004,8 @@
     "recordSell": "Enregistrer une vente",
     "nothingToSell": "Aucune unité détenue — il n’y a rien à vendre pour l’instant.",
     "txNotesPlaceholder": "Facultatif",
+    "seriesMarketValue": "Valeur de marché",
+    "seriesCostBasis": "Coût",
     "unitsShort": "unités",
     "avgPriceShort": "moy.",
     "tabHoldings": "Positions",

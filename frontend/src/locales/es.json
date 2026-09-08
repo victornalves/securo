@@ -1004,6 +1004,8 @@
     "recordSell": "Registrar venta",
     "nothingToSell": "No tienes unidades — todavía no hay nada que vender.",
     "txNotesPlaceholder": "Opcional",
+    "seriesMarketValue": "Valor de mercado",
+    "seriesCostBasis": "Coste",
     "unitsShort": "ud",
     "avgPriceShort": "PM",
     "tabHoldings": "Cartera",

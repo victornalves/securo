@@ -1004,6 +1004,8 @@
     "recordSell": "Registra vendita",
     "nothingToSell": "Nessuna unità detenuta — non c’è ancora nulla da vendere.",
     "txNotesPlaceholder": "Facoltativo",
+    "seriesMarketValue": "Valore di mercato",
+    "seriesCostBasis": "Costo",
     "unitsShort": "un",
     "avgPriceShort": "PM",
     "tabHoldings": "Portafoglio",

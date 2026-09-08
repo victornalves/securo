@@ -1004,6 +1004,8 @@
     "recordSell": "Verkauf erfassen",
     "nothingToSell": "Keine Einheiten im Bestand — es gibt noch nichts zu verkaufen.",
     "txNotesPlaceholder": "Optional",
+    "seriesMarketValue": "Marktwert",
+    "seriesCostBasis": "Einstandskosten",
     "unitsShort": "Stk.",
     "avgPriceShort": "Schnitt",
     "tabHoldings": "Bestand",

@@ -1076,6 +1076,8 @@
     "recordSell": "Zapisz sprzedaż",
     "nothingToSell": "Brak jednostek w portfelu — nie ma jeszcze czego sprzedać.",
     "txNotesPlaceholder": "Opcjonalnie",
+    "seriesMarketValue": "Wartość rynkowa",
+    "seriesCostBasis": "Koszt nabycia",
     "unitsShort": "szt",
     "avgPriceShort": "śr",
     "tabHoldings": "Portfel",
