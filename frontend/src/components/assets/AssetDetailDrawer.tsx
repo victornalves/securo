@@ -12,6 +12,7 @@ import { AssetDetail } from './AssetDetail'
 import { HoldingLedger } from './HoldingLedger'
 import { ExternalLinksMenu } from './ExternalLinksMenu'
 import { isLedgerBacked } from '@/lib/asset-detail-utils'
+import { hasOpenOverlayLayer, isInsideOverlayLayer } from '@/lib/overlay-dismiss'
 import { PositionSummary } from './PositionSummary'
 import { BoughtSoldBar } from './BoughtSoldBar'
 
@@ -73,11 +74,15 @@ export function AssetDetailDrawer({
     enabled: !!asset && (asset.transaction_count ?? 0) > 0,
   })
 
-  // Close on Escape
+  // Close on Escape — but let a layer above handle its own Escape first, so
+  // one press closes the transaction dialog rather than the dialog *and* the
+  // drawer underneath it.
   useEffect(() => {
     if (!asset) return
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      if (hasOpenOverlayLayer()) return
+      onClose()
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
@@ -88,6 +93,10 @@ export function AssetDetailDrawer({
   useEffect(() => {
     if (!asset) return
     const handleClick = (e: MouseEvent) => {
+      // A dialog, dropdown or date popover opened from inside the drawer is
+      // portalled to the end of <body>, so clicking it is technically outside
+      // the panel. It is not "outside" in the sense this handler means.
+      if (isInsideOverlayLayer(e.target)) return
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose()
       }

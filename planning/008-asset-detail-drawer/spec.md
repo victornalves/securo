@@ -5,7 +5,7 @@
 | ID           | 008          |
 | Type         | Feature      |
 | Status       | Approved     |
-| Version      | 1.1.0        |
+| Version      | 1.1.1        |
 | Author       | Victor Alves |
 | Last updated | 2026-09-08   |
 | Jira         | —            |
@@ -144,6 +144,10 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
 - [ ] The drawer dismisses on Escape, on a click outside the panel, and on its close button —
       matching `TransactionDrillDown`'s behavior, including the delay that keeps the opening click
       from closing it immediately.
+- [ ] A dialog, dropdown or date popover opened **from inside** the drawer does not dismiss it:
+      interacting with that layer, dismissing it, and pressing Escape while it is open all leave the
+      drawer standing. Radix portals such a layer to the end of `<body>`, so it is outside the
+      panel's subtree without being outside the drawer in any sense the user would recognise.
 - [ ] Row-level actions (move to wallet, edit, delete) still work from the table and do **not** open
       the drawer.
 - [ ] Opening the drawer for one asset and then another shows the second asset's data, with no
@@ -394,6 +398,7 @@ endpoint already accepts. No new endpoint, no schema change, no migration.
 
 | Version | Date       | Author       | Change        |
 | ------- | ---------- | ------------ | ------------- |
+| 1.1.1   | 2026-09-08 | Victor Alves | QA: a dialog opened from inside the drawer dismissed the drawer as well. The outside-click and Escape handlers treated Radix's portalled layers as "outside", which is true of the DOM and false of the interaction. Adds the criterion above. |
 | 1.1.0   | 2026-09-08 | Victor Alves | **Premise correction found in QA.** D2 and D12 assumed that only `market_price` assets carry a trade ledger — "every asset that enters the ledger through Securo's own flows is market-priced". That is false: `add_transaction` never checks `valuation_method`, and in the live database **all 18 active assets are `manual` with trades**, so the drawer's ledger body would never have appeared for that portfolio at all. Adds D14 (ledger shown when trades drive the figures, using the backend's own `average_price != None` signal; hybrids get both bodies) and D15 (trade actions wherever the ledger shows). Also extends the fix to the global tab's holding selector, which was keyed on the same wrong predicate and was therefore empty — leaving "new ticker" as the only way to add a trade, which would have created a duplicate asset. |
 | 1.0.0   | 2026-09-08 | Victor Alves | Approved. Three open questions closed into decisions: external destinations are Yahoo Finance, Google Search and TradingView with one set for every asset type (D10, D11 — Google Finance deep links rejected because they need exchange codes Securo does not hold, and no crypto-specific provider is added), the global tab's asset filter is ticker-scoped (D12 — which still covers Tesouro Direto bonds, whose synthetic `TD:` symbol is a valid filter key but not an externally linkable one), and the drawer is URL-addressable (D13 — a considered divergence from `TransactionDrillDown`). Extending the ledger to manual assets moves to backlog item 009. Drawer width and the cash-transaction link stay open as presentation-level questions for planning. |
 | 0.1.0   | 2026-09-08 | Victor Alves | Initial draft. Nine decisions locked up front: drawer replaces the inline expansion (D1), manual assets get a valuation-history body and no ledger (D2), separate buy and sell actions (D3), market-value-plus-cumulative-cost chart (D4), no client-side cost-basis math (D5), external providers linked and never read (D6), global tab filters in scope (D7) and server-side (D8), no backend change (D9). |
