@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -257,6 +258,54 @@ export default function AssetsPage() {
     () => (openAssetId ? ((assetsList ?? []).find((a) => a.id === openAssetId) ?? null) : null),
     [openAssetId, assetsList],
   )
+
+  // --- `?asset=<id>` -------------------------------------------------------
+  // A holding is a durable thing worth linking to, so the drawer lives in the
+  // URL: it survives a reload and answers the back button. The push-vs-replace
+  // discipline below is lifted from pages/reports.tsx, which already debugged
+  // this; see the comment there about the spurious duplicate history entries.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const syncingFromUrlRef = useRef(false)
+  const prevSearchRef = useRef<string | null>(null)
+  const didMountRef = useRef(false)
+
+  // URL → state
+  useEffect(() => {
+    const search = searchParams.toString()
+    if (prevSearchRef.current === search) return
+    prevSearchRef.current = search
+    const urlAsset = searchParams.get('asset')
+    setOpenAssetId((prev) => {
+      if (prev === (urlAsset ?? null)) return prev
+      syncingFromUrlRef.current = true
+      return urlAsset ?? null
+    })
+  }, [searchParams])
+
+  // state → URL
+  useEffect(() => {
+    if (syncingFromUrlRef.current) {
+      syncingFromUrlRef.current = false
+      didMountRef.current = true
+      return
+    }
+    const params = new URLSearchParams(window.location.search)
+    const hadParam = params.has('asset')
+    if (openAssetId) params.set('asset', openAssetId)
+    else params.delete('asset')
+    // Push only when the drawer goes from closed to open. Switching between
+    // holdings replaces, so back doesn't walk through every one the user
+    // glanced at; closing replaces too, so back doesn't reopen what was just
+    // dismissed. Either way one back press lands on the plain holdings view
+    // rather than leaving /assets.
+    const shouldPush = didMountRef.current && !hadParam && !!openAssetId
+    didMountRef.current = true
+    setSearchParams(params, { replace: !shouldPush })
+    // `setSearchParams` is intentionally excluded: react-router-dom returns a
+    // new reference on every navigation, and reacting to that alone pushed a
+    // spurious duplicate history entry on every update (see reports.tsx).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAssetId])
 
   // Selling a whole position makes the backend set `sell_date`
   // (recompute_and_cache), which drops the holding out of the active list the

@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T11   |
 | Feature    | 008   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T4    |
 | PR         |       |
 | Jira       |       |
@@ -66,3 +66,27 @@ tab, collapse state and collection filter.
 
 Test the cold-load path deliberately — it is the one that a `useState`-only implementation
 appears to pass and actually fails.
+
+## Outcome
+
+Two effects in `pages/assets.tsx` sync `openAssetId` with `?asset=<id>`, following
+`reports.tsx`'s discipline verbatim — including the `eslint-disable` on the dependency array,
+with a comment pointing at the precedent so the next reader finds the debugged version rather
+than rediscovering the duplicate-history-entry bug.
+
+**The push rule turned out to need three cases, not two.** Pushing on every change would make
+back walk through every holding glanced at; replacing on every change would make back leave
+`/assets`. So: push only on the closed → open transition, and replace both when switching
+between holdings and when closing. Consequences, each deliberate:
+
+- back from an open drawer → the plain holdings view, still on `/assets`
+- back after switching through several holdings → the plain view, not the previous holding
+- back after clicking close → does not reopen what was just dismissed
+
+The cold-load path is handled by the resolution effect from T4, which gates on `isLoading`
+rather than clearing the parameter — so a deep link on a cold load is not dropped while
+`['assets']` is still in flight. A stale link resolves to the plain view with no toast, because
+`drawerResolvedRef` was never set; the toast fires only when a drawer that *was* open loses its
+asset.
+
+Verified with the full `npm run build` (tsc + vite), not just `tsc -b`. Lint unchanged.
