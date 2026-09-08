@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
-import { Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import {
   AreaChart,
   Area,
@@ -177,6 +177,8 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
     : true
   const chartColor = trendIsPositive ? '#10B981' : '#F43F5E'
 
+  const negativeValuation = !!valueAmount && parseFloat(valueAmount) < 0
+
   const hasChart = trendWithPurchase.length > 1
   // In chart-only mode (market-priced holdings, paired with the ledger) there's
   // nothing to show until the value series has at least two points.
@@ -297,13 +299,27 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
         </div>
       )}
 
-      {/* Add Value Form — only for manual assets */}
-      {!chartOnly && valuationMethod === 'manual' && canWrite && <div className="flex items-end gap-2">
+      {/* Revaluation form — only for manual assets.
+          This records what the asset is WORTH on a date: an absolute figure
+          that replaces the previous one, not a delta and not a trade. Users
+          were reading it as "add a transaction" and reasoning that a negative
+          amount must be a sale — it is not; it would simply make the asset
+          worth a negative amount. Hence the explicit heading, the explanation,
+          and the `min={0}` guard below (spec 008 D2). */}
+      {!chartOnly && valuationMethod === 'manual' && canWrite && <div className="space-y-2">
+        <div>
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+            {t('assets.recordValuation')}
+          </p>
+          <p className="text-[11px] text-muted-foreground">{t('assets.valuationExplainer')}</p>
+        </div>
+        <div className="flex items-end gap-2">
         <div className="flex-1">
-          <Label className="text-[11px] text-muted-foreground">{t('assets.amount')}</Label>
+          <Label className="text-[11px] text-muted-foreground">{t('assets.valuationAmount')}</Label>
           <Input
             type="number"
             step="any"
+            min={0}
             value={valueAmount}
             onChange={e => setValueAmount(e.target.value)}
             placeholder="0.00"
@@ -311,15 +327,15 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
           />
         </div>
         <div className="w-36">
-          <Label className="text-[11px] text-muted-foreground">{t('assets.date')}</Label>
+          <Label className="text-[11px] text-muted-foreground">{t('assets.asOfDate')}</Label>
           <DatePickerInput value={valueDate} onChange={setValueDate} />
         </div>
         <Button
           size="sm"
           className="h-8 px-3 text-xs"
-          disabled={!valueAmount || addValueMutation.isPending}
+          disabled={!valueAmount || negativeValuation || addValueMutation.isPending}
           onClick={() => {
-            if (valueAmount) {
+            if (valueAmount && !negativeValuation) {
               addValueMutation.mutate({
                 assetId,
                 amount: parseFloat(valueAmount),
@@ -329,13 +345,22 @@ export function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLo
           }}
         >
           <Plus size={14} className="mr-1" />
-          {t('assets.addValue')}
+          {t('assets.saveValuation')}
         </Button>
+        </div>
+        {/* Names the mistake instead of clamping it silently: a disposal is a
+            different thing, and this control cannot express one. */}
+        {negativeValuation && (
+          <p className="flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+            <AlertTriangle size={12} className="shrink-0" />
+            {t('assets.negativeValuation')}
+          </p>
+        )}
       </div>}
 
       {/* Value History */}
       {!chartOnly && <div>
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('assets.valueHistory')}</p>
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('assets.valuationHistory')}</p>
         {valuesLoading ? (
           <Skeleton className="h-20 w-full rounded-lg" />
         ) : valuesWithPurchase.length > 0 ? (

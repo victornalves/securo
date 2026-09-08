@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T10   |
 | Feature    | 008   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T4    |
 | PR         |       |
 | Jira       |       |
@@ -65,3 +65,28 @@ undeletable, and the purchase entry plus change-from-previous figures preserved.
 A user deliberately entering negative valuations (a liability modelled as an asset) loses that.
 The correct fix would be a liability type, not a negative asset — out of scope, and worth a
 backlog item if it ever comes up.
+
+## Outcome
+
+The manual-asset form is now explicitly a **valuation** form: a heading (`Record a valuation`),
+a one-line explanation that it records what the asset is worth on a date and replaces the
+previous valuation rather than recording a purchase or a sale, relabelled fields (`Worth on this
+date`, `As of`), and `Save valuation` on the button. The history heading became
+`Valuation history`.
+
+`min={0}` on the input plus a submit guard: a negative amount is refused with a message that
+names the mistake — a valuation cannot be negative, and a disposal is recorded through the
+asset's sell date. Silently clamping to zero would have hidden the misunderstanding this whole
+task exists to correct.
+
+`growth_rule` assets are untouched: the form still renders only for
+`valuation_method === 'manual' && canWrite`, and per-entry deletion stays restricted to
+`source === 'manual'` entries. The purchase entry and the change-from-previous figures are
+preserved.
+
+Also removed three locale keys that this task orphaned — `assets.addValue`,
+`assets.valueHistory` and `assets.amount` — after grepping for dynamic `t()` construction to
+confirm nothing built them at runtime. Leaving them would have passed the parity test while
+being dead in all nine files.
+
+Seven keys added, three removed, across nine files. `tsc` clean, 109/109.
