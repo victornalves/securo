@@ -4,7 +4,7 @@
 | ---------- | ----------- |
 | Task       | T12         |
 | Feature    | 008         |
-| Status     | Todo        |
+| Status     | Done        |
 | Depends on | T2, T11     |
 | PR         |             |
 | Jira       |             |
@@ -65,3 +65,26 @@ preserved.
 
 Depends on T11 rather than T4 because "a row leads to that asset's drawer" is expressed through
 the URL parameter.
+
+## Outcome
+
+`AssetTransactionsTab` now holds `{ filterTicker, filterKind }`, both in the query key
+(`['asset-transactions', 'all', ticker, kind]`) and both sent to
+`GET /assets/transactions` — parameters the endpoint has always accepted and the UI never used.
+A `Select` for the asset, chips for the direction, a clear button when either is set, and an
+empty state that distinguishes filtered-to-nothing from having no trades.
+
+The asset options come from `hasFilterableTicker`, **not** `externalLinksFor` — so Tesouro
+Direto bonds are offered (their `TD:` symbol is a valid filter key), which is the distinction
+the spec called out. TD entries show the asset name rather than the synthetic symbol, which
+would be unreadable in a dropdown.
+
+**One edge the task did not anticipate.** The drawer resolves an asset against the
+collection-filtered list, but this tab lists trades portfolio-wide — so with a collection
+active, some rows point at assets the drawer cannot open. Rather than offering a click that
+silently does nothing, those rows are rendered non-clickable (`openableAssetIds`). The
+underlying inconsistency — the tab ignoring the collection filter — is pre-existing and left
+alone; this just stops the new affordance from lying about it.
+
+Three locale keys across nine files. `tsc` clean, 109/109, full `npm run build` green, lint at
+the one pre-existing page warning.

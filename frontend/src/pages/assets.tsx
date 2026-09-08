@@ -16,6 +16,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
@@ -32,6 +39,7 @@ import {
   Wallet,
   FolderInput,
   AlertTriangle,
+  X,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -53,7 +61,7 @@ import { getTypeConfig } from '@/components/assets/asset-types'
 import { AssetDetailDrawer } from '@/components/assets/AssetDetailDrawer'
 import { AddHoldingTransactionDialog } from '@/components/assets/AddHoldingTransactionDialog'
 import { formatCurrency, formatRelativeTime, assetErrorMessage } from '@/components/assets/asset-format'
-import { txTotal } from '@/lib/asset-detail-utils'
+import { txTotal, hasFilterableTicker } from '@/lib/asset-detail-utils'
 
 const ASSET_TYPES = [
   'stock',
@@ -1033,6 +1041,7 @@ export default function AssetsPage() {
           mask={mask}
           canWrite={canWrite}
           onChanged={refetchAssetViews}
+          onOpenAsset={setOpenAssetId}
         />
       ) : (
       <>
@@ -1939,6 +1948,7 @@ function AssetTransactionsTab({
   mask,
   canWrite,
   onChanged,
+  onOpenAsset,
 }: {
   holdings: Asset[]
   wallets: AssetGroup[]
@@ -1947,14 +1957,48 @@ function AssetTransactionsTab({
   mask: (v: string) => string
   canWrite: boolean
   onChanged: () => void
+  onOpenAsset: (assetId: string) => void
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
+  // Server-side filters. `GET /assets/transactions` has always accepted these;
+  // the tab simply never sent them, which is why a portfolio-wide ledger had
+  // no way to be narrowed. They live in the query key, so changing one is a
+  // refetch rather than a filter over a fully-fetched array — which works
+  // today and fails at the first long ledger.
+  const [filterTicker, setFilterTicker] = useState<string | null>(null)
+  const [filterKind, setFilterKind] = useState<'buy' | 'sell' | null>(null)
+  const hasFilters = !!filterTicker || !!filterKind
+
   const { data: txs, isLoading } = useQuery({
-    queryKey: ['asset-transactions'],
-    queryFn: () => assets.allTransactions(),
+    queryKey: ['asset-transactions', 'all', filterTicker, filterKind],
+    queryFn: () =>
+      assets.allTransactions({
+        ticker: filterTicker ?? undefined,
+        kind: filterKind ?? undefined,
+      }),
   })
+
+  // Every asset that can appear in the ledger, keyed by its stored ticker.
+  // Deliberately NOT `externalLinksFor`'s test: a Tesouro Direto TD: symbol is
+  // meaningless to a data provider but a perfectly good filter key, and sold
+  // holdings still have trades worth finding.
+  const filterableTickers = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const h of holdings) {
+      if (hasFilterableTicker(h) && !seen.has(h.ticker!)) {
+        seen.set(h.ticker!, h.ticker!.startsWith('TD:') ? h.name : `${h.ticker} · ${h.name}`)
+      }
+    }
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [holdings])
+
+  // The drawer resolves an asset against the collection-filtered list, but this
+  // tab lists trades portfolio-wide. With a collection active, some rows point
+  // at assets the drawer cannot open — so those rows are not made clickable
+  // rather than offering a click that does nothing.
+  const openableAssetIds = useMemo(() => new Set(holdings.map((h) => h.id)), [holdings])
 
   const marketHoldings = useMemo(
     () => holdings.filter((h) => h.valuation_method === 'market_price' && !h.sell_date),
@@ -2096,6 +2140,52 @@ function AssetTransactionsTab({
         )}
       </div>
 
+      {/* Filters. Both go to the server via the endpoint's existing `ticker`
+          and `kind` parameters. The asset list only offers holdings that
+          actually carry a ticker, so no option can come back empty. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Select
+          value={filterTicker ?? '__all__'}
+          onValueChange={(v) => setFilterTicker(v === '__all__' ? null : v)}
+        >
+          <SelectTrigger className="w-[240px] h-8 text-xs">
+            <SelectValue placeholder={t('assets.allAssets')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">{t('assets.allAssets')}</SelectItem>
+            {filterableTickers.map(([ticker, label]) => (
+              <SelectItem key={ticker} value={ticker}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="inline-flex items-center gap-1 p-0.5 rounded-lg bg-muted">
+          {([null, 'buy', 'sell'] as const).map((k) => (
+            <button
+              key={k ?? 'all'}
+              onClick={() => setFilterKind(k)}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                filterKind === k
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {k === null ? t('assets.filterAll') : k === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+            </button>
+          ))}
+        </div>
+
+        {hasFilters && (
+          <button
+            onClick={() => { setFilterTicker(null); setFilterKind(null) }}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <X size={12} />
+            {t('assets.clearFilters')}
+          </button>
+        )}
+      </div>
+
       {/* Holdings with no recorded buys — flagged in amber so the user knows
           the average price / return is missing until they add their purchases. */}
       {holdingsWithoutCost.length > 0 && (
@@ -2134,7 +2224,12 @@ function AssetTransactionsTab({
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
         </div>
       ) : (txs ?? []).length === 0 ? (
-        holdingsWithoutCost.length === 0 ? (
+        hasFilters ? (
+          <div className="text-center py-16">
+            <TrendingUp className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
+            <p className="text-muted-foreground">{t('assets.noMatchingTx')}</p>
+          </div>
+        ) : holdingsWithoutCost.length === 0 ? (
           <div className="text-center py-16">
             <TrendingUp className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
             <p className="text-muted-foreground">{t('assets.noTransactions')}</p>
@@ -2153,15 +2248,21 @@ function AssetTransactionsTab({
                 >
                   {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
                 </Badge>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
+                <button
+                  type="button"
+                  onClick={() => openableAssetIds.has(tx.asset_id) && onOpenAsset(tx.asset_id)}
+                  disabled={!openableAssetIds.has(tx.asset_id)}
+                  className="flex-1 min-w-0 text-left group disabled:cursor-default"
+                  title={openableAssetIds.has(tx.asset_id) ? t('assets.openHolding') : undefined}
+                >
+                  <p className="text-sm font-medium text-foreground truncate group-enabled:group-hover:underline">
                     {tx.ticker || tx.asset_name}
                   </p>
                   <p className="text-[11px] text-muted-foreground tabular-nums">
                     {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
                     {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, cur, locale))}
                   </p>
-                </div>
+                </button>
                 <div className="text-right shrink-0">
                   <p className="text-sm font-semibold tabular-nums text-foreground">
                     {mask(formatCurrency(total, cur, locale))}
