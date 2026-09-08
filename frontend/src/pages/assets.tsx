@@ -61,7 +61,7 @@ import { getTypeConfig } from '@/components/assets/asset-types'
 import { AssetDetailDrawer } from '@/components/assets/AssetDetailDrawer'
 import { AddHoldingTransactionDialog } from '@/components/assets/AddHoldingTransactionDialog'
 import { formatCurrency, formatRelativeTime, assetErrorMessage } from '@/components/assets/asset-format'
-import { txTotal, hasFilterableTicker, isLedgerBacked } from '@/lib/asset-detail-utils'
+import { txTotal, hasFilterableTicker, isLedgerBacked, valueInDisplayCurrency } from '@/lib/asset-detail-utils'
 
 const ASSET_TYPES = [
   'stock',
@@ -232,8 +232,11 @@ export default function AssetsPage() {
   )
   // Portfolio total in the user's primary currency — denominator for the
   // "% da carteira" column in the holdings table.
+  // Numerator and denominator of "% of portfolio" must use one rule — see
+  // valueInDisplayCurrency. They used to disagree, which is why the figure
+  // showed a dash for every holding in a single-currency portfolio.
   const portfolioTotalPrimary = (assetsList ?? []).reduce(
-    (acc, a) => acc + Number(a.current_value_primary ?? a.current_value ?? 0),
+    (acc, a) => acc + Number(valueInDisplayCurrency(a, userCurrency) ?? 0),
     0,
   )
   const byType: Record<string, number> = {}
@@ -718,9 +721,10 @@ export default function AssetsPage() {
       hasCost && asset.gain_loss != null && asset.total_invested
         ? (asset.gain_loss / asset.total_invested) * 100
         : null
+    const assetValuePrimary = valueInDisplayCurrency(asset, userCurrency)
     const pctOfPortfolio =
-      portfolioTotalPrimary > 0 && asset.current_value_primary != null
-        ? (asset.current_value_primary / portfolioTotalPrimary) * 100
+      portfolioTotalPrimary > 0 && assetValuePrimary != null
+        ? (assetValuePrimary / portfolioTotalPrimary) * 100
         : null
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
 

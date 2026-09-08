@@ -192,6 +192,32 @@ export function tradePriceSeries(
 }
 
 /**
+ * An asset's current value in the user's display currency, or `null` when that
+ * cannot be known.
+ *
+ * `GET /assets` fills `current_value_primary` **only** when the asset's own
+ * currency differs from the display currency — the backend skips a no-op
+ * conversion. So for a single-currency portfolio the field is `null` on every
+ * asset, and code that requires it silently reports nothing. That is what made
+ * the "% of portfolio" figure show a dash for every holding: the portfolio
+ * total already fell back to `current_value`, while the per-asset numerator
+ * demanded `current_value_primary`. Numerator and denominator disagreed.
+ *
+ * The fallback is exact only when the asset is already in the display
+ * currency. For a foreign-currency asset whose conversion is missing this
+ * returns `null` rather than its unconverted amount, so a failed conversion
+ * cannot quietly inflate a total.
+ */
+export function valueInDisplayCurrency(
+  asset: Pick<Asset, 'current_value' | 'current_value_primary' | 'currency'>,
+  displayCurrency: string,
+): number | null {
+  if (asset.current_value_primary != null) return asset.current_value_primary
+  if (asset.currency === displayCurrency) return asset.current_value ?? null
+  return null
+}
+
+/**
  * Is this holding driven by the trade ledger?
  *
  * Uses the same signal the backend uses. `asset_service._asset_to_read` says

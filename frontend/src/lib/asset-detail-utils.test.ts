@@ -8,6 +8,7 @@ import {
   isLedgerBacked,
   runningPositions,
   tradePriceSeries,
+  valueInDisplayCurrency,
 } from './asset-detail-utils'
 import type { Asset, AssetTransaction } from '@/types'
 
@@ -272,8 +273,57 @@ describe('tradePriceSeries', () => {
     expect(zero.effectivePrice).toBe(4)
   })
 
+  it('keeps two trades on the same date as separate points', () => {
+    // The chart's category axis is keyed on `id` because of this: a date-keyed
+    // axis collapses same-day trades into one slot, and the tooltip then
+    // reports the first of them for both bars.
+    const series = tradePriceSeries(fiqe3, 5.596619)
+    const sameDay = series.filter((p) => p.date === '2026-07-21')
+    expect(sameDay).toHaveLength(2)
+    expect(new Set(sameDay.map((p) => p.id)).size).toBe(2)
+    expect(sameDay.map((p) => p.quantity)).toEqual([300, 34])
+  })
+
   it('returns nothing for an empty ledger', () => {
     expect(tradePriceSeries([], 5)).toEqual([])
+  })
+})
+
+describe('valueInDisplayCurrency', () => {
+  it('prefers the converted figure when the backend supplied one', () => {
+    expect(
+      valueInDisplayCurrency(
+        { current_value: 100, current_value_primary: 512.3, currency: 'USD' },
+        'BRL',
+      ),
+    ).toBe(512.3)
+  })
+
+  it('falls back to the raw value when the asset is already in the display currency', () => {
+    // GET /assets omits current_value_primary for a no-op conversion, so this
+    // is the single-currency case — which is every asset for most users.
+    expect(
+      valueInDisplayCurrency(
+        { current_value: 1953.22, current_value_primary: null, currency: 'BRL' },
+        'BRL',
+      ),
+    ).toBe(1953.22)
+  })
+
+  it('returns null for a foreign asset with no conversion, rather than its raw amount', () => {
+    // Counting 100 USD as 100 BRL would quietly inflate the portfolio total.
+    expect(
+      valueInDisplayCurrency(
+        { current_value: 100, current_value_primary: null, currency: 'USD' },
+        'BRL',
+      ),
+    ).toBeNull()
+  })
+
+  it('returns null when the asset has no value at all', () => {
+    expect(
+      valueInDisplayCurrency({ current_value: null, current_value_primary: null, currency: 'BRL' }, 'BRL'),
+    ).toBeNull()
   })
 })
 

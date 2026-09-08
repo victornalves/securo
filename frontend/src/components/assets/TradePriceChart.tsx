@@ -58,6 +58,16 @@ export function TradePriceChart({
     [txs, averagePrice],
   )
 
+  // The category axis is keyed on the transaction id, never on the date. Two
+  // trades on one day are two distinct trades, and a date-keyed category axis
+  // collapses them into one slot — both bars then resolve to the same payload,
+  // so hovering the 34-unit purchase reported the 300-unit one sitting on the
+  // same date. Ticks are labelled from this lookup instead.
+  const dateById = useMemo(
+    () => new Map(series.map((pt) => [pt.id, pt.date])),
+    [series],
+  )
+
   // One trade compares nothing, and with no average there is no baseline to
   // measure against — a fully exited position has neither.
   if (averagePrice == null || series.length < 2) return null
@@ -81,13 +91,16 @@ export function TradePriceChart({
           <BarChart data={series} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" strokeOpacity={0.5} />
             <XAxis
-              dataKey="date"
+              dataKey="id"
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v: string) =>
-                new Date(v + 'T00:00:00').toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })
-              }
+              tickFormatter={(id: string) => {
+                const date = dateById.get(id)
+                return date
+                  ? new Date(date + 'T00:00:00').toLocaleDateString(dateLocale, { day: '2-digit', month: 'short' })
+                  : ''
+              }}
             />
             <YAxis
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}

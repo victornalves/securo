@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import type { Asset } from '@/types'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { formatCurrency, formatRelativeTime } from './asset-format'
+import { valueInDisplayCurrency } from '@/lib/asset-detail-utils'
 
 /**
  * What the holding is, right now.
@@ -65,9 +66,11 @@ export function PositionSummary({
     hasCost && asset.gain_loss != null && asset.total_invested
       ? (asset.gain_loss / asset.total_invested) * 100
       : null
+  // Same rule as the page's portfolio total, so the two cannot drift apart.
+  const valuePrimary = valueInDisplayCurrency(asset, userCurrency)
   const pctOfPortfolio =
-    portfolioTotalPrimary > 0 && asset.current_value_primary != null
-      ? (asset.current_value_primary / portfolioTotalPrimary) * 100
+    portfolioTotalPrimary > 0 && valuePrimary != null
+      ? (valuePrimary / portfolioTotalPrimary) * 100
       : null
 
   const money = (v: number | null | undefined, currency = cur) =>
