@@ -40,3 +40,4 @@ export function assetErrorMessage(e: unknown, fallback: string): string {
   if (typeof detail === 'string' && detail.trim()) return detail
   return resp?.status ? `${fallback} (${resp.status})` : fallback
 }
+

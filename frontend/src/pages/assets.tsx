@@ -52,6 +52,7 @@ import { getTypeConfig } from '@/components/assets/asset-types'
 import { AssetDetailDrawer } from '@/components/assets/AssetDetailDrawer'
 import { AddHoldingTransactionDialog } from '@/components/assets/AddHoldingTransactionDialog'
 import { formatCurrency, formatRelativeTime, assetErrorMessage } from '@/components/assets/asset-format'
+import { txTotal } from '@/lib/asset-detail-utils'
 
 const ASSET_TYPES = [
   'stock',
@@ -108,10 +109,11 @@ export default function AssetsPage() {
   })
 
   const [activeTab, setActiveTab] = useState<'holdings' | 'transactions'>('holdings')
-  // Holding id for the lightweight "add transaction to this holding" dialog,
-  // opened from the holdings table ("+ add buys") and the inline ledger.
-  const [addTxAssetId, setAddTxAssetId] = useState<string | null>(null)
-  const openAddTransaction = (id: string) => setAddTxAssetId(id)
+  // Holding and direction for the "add transaction to this holding" dialog,
+  // opened from the holdings table ("+ add buys") and from the drawer's two
+  // primary actions, which pre-set the direction.
+  const [addTx, setAddTx] = useState<{ id: string; kind: 'buy' | 'sell' } | null>(null)
+  const openAddTransaction = (id: string, kind: 'buy' | 'sell' = 'buy') => setAddTx({ id, kind })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -1590,10 +1592,11 @@ export default function AssetsPage() {
           inline ledger). Brand-new tickers go through Add Asset / the
           Transactions tab. */}
       <AddHoldingTransactionDialog
-        assetId={addTxAssetId}
-        holding={(assetsList ?? []).find((a) => a.id === addTxAssetId) ?? null}
+        assetId={addTx?.id ?? null}
+        holding={(assetsList ?? []).find((a) => a.id === addTx?.id) ?? null}
+        initialKind={addTx?.kind ?? 'buy'}
         locale={locale}
-        onClose={() => setAddTxAssetId(null)}
+        onClose={() => setAddTx(null)}
         onChanged={refetchAssetViews}
       />
 
@@ -2084,7 +2087,7 @@ function AssetTransactionsTab({
       ) : (
         <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
           {(txs ?? []).map((tx) => {
-            const total = tx.quantity * tx.price
+            const total = txTotal(tx)
             const cur = tx.currency ?? 'USD'
             return (
               <div key={tx.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">

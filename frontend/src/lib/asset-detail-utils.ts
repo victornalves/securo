@@ -48,6 +48,21 @@ export function runningPositions(txs: AssetTransaction[]): Map<string, number> {
 }
 
 /**
+ * What a single trade actually cost or returned, fees included.
+ *
+ * One convention everywhere: `_recompute` adds the fee to a purchase's cost
+ * (`cost += q*p + fee`) and takes it off a sale's proceeds
+ * (`realized += (p-avg)*q - fee`). The ledger row used to show `q*p` while the
+ * transaction dialog's "Total" added the fee - the same word naming two
+ * different numbers depending on where you read it.
+ */
+export function txTotal(tx: Pick<AssetTransaction, 'kind' | 'quantity' | 'price' | 'fee'>): number {
+  const gross = tx.quantity * tx.price
+  const fee = tx.fee || 0
+  return tx.kind === 'buy' ? gross + fee : gross - fee
+}
+
+/**
  * What went in and what came out over the holding's life.
  *
  * Fee-inclusive, matching `_recompute`: a fee raises what a purchase cost

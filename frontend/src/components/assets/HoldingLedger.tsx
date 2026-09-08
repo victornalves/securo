@@ -9,6 +9,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import type { Asset } from '@/types'
 import { formatCurrency, assetErrorMessage } from './asset-format'
 import { refetchAssetLedgerViews } from '@/lib/asset-queries'
+import { txTotal } from '@/lib/asset-detail-utils'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 
 // The holding's buy/sell ledger, rendered inside the asset detail drawer.
@@ -78,9 +79,19 @@ export function HoldingLedger({
                 {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
                 {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, asset.currency, locale))}
               </span>
-              <span className="text-xs font-semibold tabular-nums text-foreground">
-                {mask(formatCurrency(tx.quantity * tx.price, asset.currency, locale))}
-              </span>
+              {/* Fee-inclusive, like the dialog's "Total" and _recompute's
+                  cost: a fee raises what a buy cost and lowers what a sell
+                  returned. The fee itself is shown below when non-zero. */}
+              <div className="text-right shrink-0">
+                <span className="block text-xs font-semibold tabular-nums text-foreground">
+                  {mask(formatCurrency(txTotal(tx), asset.currency, locale))}
+                </span>
+                {tx.fee > 0 && (
+                  <span className="block text-[10px] text-muted-foreground tabular-nums">
+                    {t('assets.txFee')} {mask(formatCurrency(tx.fee, asset.currency, locale))}
+                  </span>
+                )}
+              </div>
               {canWrite && (
                 <button
                   onClick={() => deleteMutation.mutate(tx.id)}

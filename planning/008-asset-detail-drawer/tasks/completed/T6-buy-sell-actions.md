@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T6    |
 | Feature    | 008   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | T4    |
 | PR         |       |
 | Jira       |       |
@@ -65,3 +65,27 @@ delete. Also the *Per-asset trade list* criteria on notes and on total consisten
 
 Watch the interaction with T4's close-on-disappear behavior: selling the whole position from
 this control is the fastest way to make the drawer's own asset vanish.
+
+## Outcome
+
+The drawer carries two primary actions — `assets.recordBuy` and `assets.recordSell` — side by
+side above the summary. `AddHoldingTransactionDialog` gained an `initialKind` prop, so either
+action opens the form already set to that direction; the type toggle stays for changing
+direction on an existing trade. The page's dialog state went from `addTxAssetId: string | null`
+to `addTx: { id, kind } | null`.
+
+Sale unavailable at zero units, with the reason stated in a line under the buttons — **not as
+a `title` tooltip**, which was the first attempt: a `title` on a `disabled` button does not
+fire in most browsers, so it would have been dead code standing in for a stated reason.
+
+`notes` is now in the form, reusing the existing `transactions.notes` label rather than adding
+a ninth-locale duplicate of the word.
+
+**One fee convention, in a tested function.** `txTotal` first landed in
+`components/assets/asset-format.ts`, then moved to `lib/asset-detail-utils.ts` — it is the fee
+convention itself, so it belongs beside `boughtSoldTotals` where the tests are. Three tests
+cover it, including one asserting `txTotal(one) === boughtSoldTotals([one]).bought`, which is
+what keeps a row and the summary above it from disagreeing. Both the drawer's ledger row and
+the global tab's row now use it.
+
+Four locale keys added across nine files. Suite 109/109, `tsc` clean, lint unchanged.

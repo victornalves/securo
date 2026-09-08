@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   boughtSoldTotals,
+  txTotal,
   cumulativeCostSeries,
   externalLinksFor,
   hasFilterableTicker,
@@ -72,6 +73,21 @@ describe('runningPositions', () => {
 
   it('returns an empty map for an empty ledger', () => {
     expect(runningPositions([]).size).toBe(0)
+  })
+})
+
+describe('txTotal', () => {
+  it('adds the fee to a purchase', () => {
+    expect(txTotal(tx({ id: 't', kind: 'buy', quantity: 10, price: 100, fee: 7, date: '2026-01-01' }))).toBe(1007)
+  })
+
+  it('subtracts the fee from a sale', () => {
+    expect(txTotal(tx({ id: 't', kind: 'sell', quantity: 10, price: 100, fee: 7, date: '2026-01-01' }))).toBe(993)
+  })
+
+  it('agrees with boughtSoldTotals on one trade, so the row and the summary match', () => {
+    const one = tx({ id: 't', kind: 'buy', quantity: 3, price: 25, fee: 2, date: '2026-01-01' })
+    expect(txTotal(one)).toBe(boughtSoldTotals([one]).bought)
   })
 })
 

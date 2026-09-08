@@ -19,17 +19,22 @@ import type { Asset } from '@/types'
 import { formatCurrency, assetErrorMessage } from './asset-format'
 import { refetchAssetLedgerViews } from '@/lib/asset-queries'
 
-// Lightweight dialog to add a buy/sell to an already-existing holding. Used by
-// the holdings table ("+ add buys") and the inline ledger.
+// Records a buy or a sell against an already-existing holding. Opened from the
+// holdings table ("+ add buys") and from the drawer's two primary actions,
+// which pre-set `initialKind` — so reaching a sale never requires finding the
+// type toggle below (spec 008 D3). The toggle stays, for changing direction
+// after the fact.
 export function AddHoldingTransactionDialog({
   assetId,
   holding,
+  initialKind = 'buy',
   locale,
   onClose,
   onChanged,
 }: {
   assetId: string | null
   holding: Asset | null
+  initialKind?: 'buy' | 'sell'
   locale: string
   onClose: () => void
   onChanged: () => void
@@ -40,17 +45,19 @@ export function AddHoldingTransactionDialog({
   const [quantity, setQuantity] = useState('')
   const [price, setPrice] = useState('')
   const [fee, setFee] = useState('')
+  const [notes, setNotes] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
 
   useEffect(() => {
     if (assetId) {
-      setKind('buy')
+      setKind(initialKind)
       setQuantity('')
       setPrice('')
       setFee('')
+      setNotes('')
       setDate(new Date().toISOString().slice(0, 10))
     }
-  }, [assetId])
+  }, [assetId, initialKind])
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -60,6 +67,7 @@ export function AddHoldingTransactionDialog({
         price: parseFloat(price),
         fee: fee ? parseFloat(fee) : 0,
         date,
+        notes: notes.trim() || undefined,
       }),
     onSuccess: () => {
       refetchAssetLedgerViews(queryClient, assetId)
@@ -118,6 +126,10 @@ export function AddHoldingTransactionDialog({
               <Label>{t('assets.date')}</Label>
               <DatePickerInput value={date} onChange={setDate} />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>{t('transactions.notes')}</Label>
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t('assets.txNotesPlaceholder')} />
           </div>
           {oversell && (
             <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">

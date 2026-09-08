@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { X } from 'lucide-react'
+import { X, Plus, Minus } from 'lucide-react'
 import { assets as assetsApi } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import type { Asset } from '@/types'
 import { AssetIcon } from './AssetIcon'
 import { getTypeConfig } from './asset-types'
@@ -54,7 +55,7 @@ export function AssetDetailDrawer({
   dateLocale: string
   canWrite: boolean
   onClose: () => void
-  onAddTransaction: (assetId: string) => void
+  onAddTransaction: (assetId: string, kind: 'buy' | 'sell') => void
   onChanged: () => void
 }) {
   const { t } = useTranslation()
@@ -118,6 +119,7 @@ export function AssetDetailDrawer({
       )
     : ''
   const needsBuys = isMarketPriced && asset?.average_price == null && !asset?.sell_date
+  const canSell = (asset?.units ?? 0) > 0
 
   return (
     <>
@@ -187,6 +189,38 @@ export function AssetDetailDrawer({
               </button>
             </div>
 
+            {/* Two separately labelled actions, so recording a sale is as
+                reachable as recording a purchase. Selling needs a position to
+                sell: the backend refuses a short (_raise_if_oversell), and
+                saying so here beats discovering it as a failed request. */}
+            {isMarketPriced && canWriteHere && (
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0">
+                <Button
+                  size="sm"
+                  className="h-8 flex-1 gap-1.5 text-xs"
+                  onClick={() => onAddTransaction(asset.id, 'buy')}
+                >
+                  <Plus size={14} />
+                  {t('assets.recordBuy')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 flex-1 gap-1.5 text-xs"
+                  disabled={!canSell}
+                  onClick={() => onAddTransaction(asset.id, 'sell')}
+                >
+                  <Minus size={14} />
+                  {t('assets.recordSell')}
+                </Button>
+              </div>
+            )}
+            {isMarketPriced && canWriteHere && !canSell && (
+              <p className="px-5 pb-3 text-[11px] text-muted-foreground shrink-0">
+                {t('assets.nothingToSell')}
+              </p>
+            )}
+
             {/* Body */}
             <div className="flex-1 overflow-auto">
               {isMarketPriced ? (
@@ -197,7 +231,7 @@ export function AssetDetailDrawer({
                     userCurrency={userCurrency}
                     locale={locale}
                     canWrite={canWriteHere}
-                    onRecordBuy={() => onAddTransaction(asset.id)}
+                    onRecordBuy={() => onAddTransaction(asset.id, 'buy')}
                   />
                   <BoughtSoldBar
                     txs={txs ?? []}
@@ -221,7 +255,7 @@ export function AssetDetailDrawer({
                     locale={locale}
                     dateLocale={dateLocale}
                     canWrite={canWriteHere}
-                    onAdd={() => onAddTransaction(asset.id)}
+                    onAdd={() => onAddTransaction(asset.id, 'buy')}
                     onChanged={onChanged}
                   />
                 </>
