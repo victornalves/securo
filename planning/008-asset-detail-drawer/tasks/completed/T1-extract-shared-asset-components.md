@@ -4,7 +4,7 @@
 | ---------- | ----- |
 | Task       | T1    |
 | Feature    | 008   |
-| Status     | Todo  |
+| Status     | Done  |
 | Depends on | —     |
 | PR         |       |
 | Jira       |       |
@@ -67,3 +67,18 @@ for the review risk of a large diff against a 2868-line file. Verified by:
 
 Expect this to be the largest diff of the feature while changing the least. Keeping it
 separate is the point.
+
+## Outcome
+
+Six modules under `frontend/src/components/assets/`: `AssetDetail.tsx`,
+`HoldingLedger.tsx`, `AddHoldingTransactionDialog.tsx`, `AssetIcon.tsx`,
+`asset-types.ts` (the type→icon config) and `asset-format.ts` (`formatCurrency`,
+`formatRelativeTime`, `assetErrorMessage`). `pages/assets.tsx` went from 2869 to 2260 lines.
+
+`ASSET_TYPE_CONFIG` and `getTypeConfig` landed in their own `asset-types.ts` rather than
+beside `AssetIcon`, because eslint's `react-refresh/only-export-components` rule flags a file
+that exports both a component and shared constants — the rule's own advice is a separate file.
+
+Verified: `tsc -b` clean, 83/83 tests pass, and `eslint` reports the **same two warnings as
+the pre-extraction baseline** (`set-state-in-effect` in the dialog's reset effect,
+`exhaustive-deps` on `activeAssets`) — both moved with the code, neither introduced here.
