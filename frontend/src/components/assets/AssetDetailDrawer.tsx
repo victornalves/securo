@@ -1,0 +1,326 @@
+import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
+import { X, Plus, Minus } from 'lucide-react'
+import { assets as assetsApi } from '@/lib/api'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import type { Asset, AssetTransaction } from '@/types'
+import { AssetIcon } from './AssetIcon'
+import { getTypeConfig } from './asset-types'
+import { AssetDetail } from './AssetDetail'
+import { HoldingLedger } from './HoldingLedger'
+import { ExternalLinksMenu } from './ExternalLinksMenu'
+import { isLedgerBacked } from '@/lib/asset-detail-utils'
+import { hasOpenOverlayLayer, isInsideOverlayLayer } from '@/lib/overlay-dismiss'
+import { PositionSummary } from './PositionSummary'
+import { BoughtSoldBar } from './BoughtSoldBar'
+
+/**
+ * The single detail surface for one holding.
+ *
+ * Replaces the inline row expansion the holdings table used to render: keeping
+ * both would mean maintaining the chart and the ledger in two layouts and
+ * would give the user two different answers to the same click (spec 008 D1).
+ *
+ * Panel mechanics follow `components/transaction-drill-down.tsx`, the
+ * established drawer in this codebase — backdrop, panel pinned right, Escape
+ * and click-outside to dismiss, header naming the subject. It is deliberately
+ * wider: the drill-down carries one list, this carries a summary, a chart, a
+ * comparison and a filtered list.
+ *
+ * Two bodies, selected by `valuation_method`:
+ *  - `market_price` → the trade ledger, with buy and sell actions
+ *  - `manual` / `growth_rule` → valuation history, and no trade actions,
+ *    because a revaluation is not a trade (spec 008 D2)
+ *
+ * The asset arrives as a prop. `pages/assets.tsx` already holds the whole list
+ * under the `['assets']` query key, so this must not fetch it again; it fetches
+ * only the per-asset series its bodies need.
+ */
+export function AssetDetailDrawer({
+  asset,
+  portfolioTotalPrimary,
+  userCurrency,
+  locale,
+  dateLocale,
+  canWrite,
+  onClose,
+  onAddTransaction,
+  onEditTransaction,
+  onChanged,
+}: {
+  /** `null` closes the drawer. */
+  asset: Asset | null
+  /** Page-level total, so "% of portfolio" is not recomputed here. */
+  portfolioTotalPrimary: number
+  userCurrency: string
+  locale: string
+  dateLocale: string
+  canWrite: boolean
+  onClose: () => void
+  onAddTransaction: (assetId: string, kind: 'buy' | 'sell') => void
+  onEditTransaction: (assetId: string, tx: AssetTransaction) => void
+  onChanged: () => void
+}) {
+  const { t } = useTranslation()
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  // Same query key as HoldingLedger and the chart's trade markers, so all
+  // three read one cached response rather than issuing three requests.
+  const { data: txs } = useQuery({
+    queryKey: ['asset-transactions', asset?.id],
+    queryFn: () => assetsApi.transactions(asset!.id),
+    enabled: !!asset && (asset.transaction_count ?? 0) > 0,
+  })
+
+  // Close on Escape — but let a layer above handle its own Escape first, so
+  // one press closes the transaction dialog rather than the dialog *and* the
+  // drawer underneath it.
+  useEffect(() => {
+    if (!asset) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (hasOpenOverlayLayer()) return
+      onClose()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [asset, onClose])
+
+  // Close on click outside. Delayed registration so the click that opened the
+  // drawer does not immediately close it again.
+  useEffect(() => {
+    if (!asset) return
+    const handleClick = (e: MouseEvent) => {
+      // A dialog, dropdown or date popover opened from inside the drawer is
+      // portalled to the end of <body>, so clicking it is technically outside
+      // the panel. It is not "outside" in the sense this handler means.
+      if (isInsideOverlayLayer(e.target)) return
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClick)
+    }, 100)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('mousedown', handleClick)
+    }
+  }, [asset, onClose])
+
+  // As in TransactionDrillDown, the panel chrome stays mounted and animates;
+  // its contents render only while an asset is open, so closing slides out an
+  // empty panel for the 200 ms of the transition.
+  const config = asset ? getTypeConfig(asset.type) : null
+  const isMarketPriced = asset?.valuation_method === 'market_price'
+  // Which body to show is decided by what actually drives the holding's
+  // figures, not by `valuation_method`. A `manual` asset can carry a full
+  // ledger — `add_transaction` never checks the valuation method — and keying
+  // on the method hid exactly the trades the user came to see.
+  const ledgerBacked = !!asset && isLedgerBacked(asset)
+  // Market-priced with no trades yet still gets the ledger, so the purchase
+  // action has somewhere to live.
+  const showLedger = ledgerBacked || isMarketPriced
+  // Without a live quote, the current value comes from AssetValue entries, so
+  // the valuation controls stay relevant even alongside a ledger.
+  const showValuation = !!asset && !isMarketPriced
+  const isHybrid = showLedger && showValuation
+  const isSynced = !!asset && asset.source !== 'manual'
+  // A provider-owned asset is read-only, matching the holdings table: synced
+  // but not market-priced means the provider, not the user, owns its figures.
+  const isProviderOwned = isSynced && !isMarketPriced
+  const canWriteHere = canWrite && !isProviderOwned
+  const isTesouro = !!asset?.ticker?.startsWith('TD:')
+  const hasTicker = !!asset?.ticker && !isTesouro
+  // Same subtitle rule as the holdings row: the name when a ticker headlines
+  // the panel, otherwise what kind of thing this is.
+  const typeLabel = asset
+    ? t(
+        `assets.type${asset.type
+          .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+          .replace(/^./, (c) => c.toUpperCase())}`,
+      )
+    : ''
+  const needsBuys = isMarketPriced && asset?.average_price == null && !asset?.sell_date
+  const canSell = (asset?.units ?? 0) > 0
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className={`fixed inset-0 bg-black/20 z-40 transition-opacity duration-200 ${
+          asset ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      />
+
+      {/* Panel */}
+      <div
+        ref={panelRef}
+        className={`fixed top-0 right-0 h-full w-full sm:max-w-xl bg-card shadow-2xl z-50 transform transition-transform duration-200 ease-out flex flex-col ${
+          asset ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {asset && config && (
+          <>
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-border shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <AssetIcon
+                  logoUrl={asset.logo_url}
+                  Icon={config.icon}
+                  colorClass={config.color}
+                  bgClass={config.bg}
+                  size={20}
+                  tile="w-10 h-10"
+                />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h2 className="text-sm font-semibold text-foreground truncate">
+                      {hasTicker ? asset.ticker : asset.name}
+                    </h2>
+                    {asset.sell_date && (
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 text-rose-600 border-rose-200">
+                        {t('assets.sold')}
+                      </Badge>
+                    )}
+                    {isProviderOwned && (
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 text-sky-600 border-sky-200">
+                        {t('assets.synced')}
+                      </Badge>
+                    )}
+                    {needsBuys && (
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] px-1 py-0 text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30"
+                        title={t('assets.noPriceWarning')}
+                      >
+                        {t('assets.noPriceBadge')}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {hasTicker ? asset.name : isTesouro ? 'Tesouro Direto' : typeLabel}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <ExternalLinksMenu asset={asset} />
+                <button
+                  onClick={onClose}
+                  className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                  title={t('common.close')}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* Two separately labelled actions, so recording a sale is as
+                reachable as recording a purchase. Selling needs a position to
+                sell: the backend refuses a short (_raise_if_oversell), and
+                saying so here beats discovering it as a failed request. */}
+            {showLedger && canWriteHere && (
+              <div className="flex items-center gap-2 px-5 py-3 border-b border-border shrink-0">
+                <Button
+                  size="sm"
+                  className="h-8 flex-1 gap-1.5 text-xs"
+                  onClick={() => onAddTransaction(asset.id, 'buy')}
+                >
+                  <Plus size={14} />
+                  {t('assets.recordBuy')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 flex-1 gap-1.5 text-xs"
+                  disabled={!canSell}
+                  onClick={() => onAddTransaction(asset.id, 'sell')}
+                >
+                  <Minus size={14} />
+                  {t('assets.recordSell')}
+                </Button>
+              </div>
+            )}
+            {showLedger && canWriteHere && !canSell && (
+              <p className="px-5 pb-3 text-[11px] text-muted-foreground shrink-0">
+                {t('assets.nothingToSell')}
+              </p>
+            )}
+
+            {/* Body */}
+            <div className="flex-1 overflow-auto">
+              {showLedger && (
+                <>
+                  <PositionSummary
+                    asset={asset}
+                    portfolioTotalPrimary={portfolioTotalPrimary}
+                    userCurrency={userCurrency}
+                    locale={locale}
+                    canWrite={canWriteHere}
+                    onRecordBuy={() => onAddTransaction(asset.id, 'buy')}
+                  />
+                  <BoughtSoldBar
+                    txs={txs ?? []}
+                    currency={asset.currency}
+                    currentValue={asset.current_value}
+                    locale={locale}
+                  />
+                  {/* The value chart belongs to the market-priced case; a
+                      hybrid gets its chart from the valuation body below,
+                      which owns the AssetValue series that drives its value. */}
+                  {isMarketPriced && (
+                    <AssetDetail
+                      assetId={asset.id}
+                      currency={asset.currency}
+                      locale={locale}
+                      dateLocale={dateLocale}
+                      purchasePrice={asset.purchase_price}
+                      purchaseDate={asset.purchase_date}
+                      valuationMethod={asset.valuation_method}
+                      hasLedger={ledgerBacked}
+                      canWrite={canWriteHere}
+                      chartOnly
+                    />
+                  )}
+                  <HoldingLedger
+                    asset={asset}
+                    locale={locale}
+                    dateLocale={dateLocale}
+                    canWrite={canWriteHere}
+                    onAdd={() => onAddTransaction(asset.id, 'buy')}
+                    onEdit={(tx) => onEditTransaction(asset.id, tx)}
+                    onChanged={onChanged}
+                  />
+                </>
+              )}
+              {showValuation && (
+                <>
+                  {/* Two blocks that could look contradictory otherwise: the
+                      trades set the position, the valuations set the value. */}
+                  {isHybrid && (
+                    <p className="px-5 pt-4 text-[11px] text-muted-foreground">
+                      {t('assets.hybridValuationNote')}
+                    </p>
+                  )}
+                  <AssetDetail
+                    assetId={asset.id}
+                    currency={asset.currency}
+                    locale={locale}
+                    dateLocale={dateLocale}
+                    purchasePrice={asset.purchase_price}
+                    purchaseDate={asset.purchase_date}
+                    valuationMethod={asset.valuation_method}
+                    hasLedger={ledgerBacked}
+                    canWrite={canWriteHere}
+                  />
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  )
+}

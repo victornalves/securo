@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -15,30 +16,30 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
-import type { Asset, AssetGroup, AssetTransaction, AssetValue, MarketSymbolMatch, MarketSymbolQuote } from '@/types'
+import type { Asset, AssetGroup, AssetTransaction, MarketSymbolMatch, MarketSymbolQuote } from '@/types'
 import {
-  Home,
-  Car,
-  Gem,
   TrendingUp,
   Package,
   Plus,
   Pencil,
   Trash2,
   ChevronDown,
-  ChevronUp,
   ChevronRight,
   RefreshCw,
   Wallet,
   FolderInput,
-  LineChart,
-  Layers,
-  Bitcoin,
-  PieChart,
   AlertTriangle,
+  X,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -54,88 +55,13 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency: currency || 'USD' }).format(value)
-  } catch {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency: 'USD' }).format(value)
-  }
-}
-
-// Renders a logo image when one is available, falling back to the asset's
-// type-based Lucide icon on missing URL or broken image. Uses the type's
-// bg color as a tinted placeholder; switches to a white card + border when
-// showing a real logo so brand colors don't clash with our palette.
-function AssetIcon({
-  logoUrl,
-  Icon,
-  colorClass,
-  bgClass,
-  size = 20,
-  tile = 'w-10 h-10',
-}: {
-  logoUrl: string | null | undefined
-  Icon: React.ElementType
-  colorClass: string
-  bgClass: string
-  size?: number
-  tile?: string
-}) {
-  const [errored, setErrored] = useState(false)
-  const showImage = !!logoUrl && !errored
-  return (
-    <div
-      className={`${tile} rounded-lg flex items-center justify-center overflow-hidden shrink-0 ${
-        showImage ? 'bg-white border border-border' : bgClass
-      }`}
-    >
-      {showImage ? (
-        <img
-          src={logoUrl!}
-          alt=""
-          className="w-full h-full object-contain"
-          onError={() => setErrored(true)}
-        />
-      ) : (
-        <Icon size={size} className={colorClass} />
-      )}
-    </div>
-  )
-}
-
-// Compact relative-time formatter ("2h ago" / "há 2h"). Used for the price
-// preview "last updated" hint. Intl.RelativeTimeFormat handles the locale
-// grammar so we don't hand-roll plurals. Falls back to absolute date only
-// when the input is missing — otherwise always returns a relative string.
-function formatRelativeTime(dateInput: string | null | undefined, locale: string): string | null {
-  if (!dateInput) return null
-  const then = new Date(dateInput).getTime()
-  if (Number.isNaN(then)) return null
-  const diffSec = (then - Date.now()) / 1000
-  const absSec = Math.abs(diffSec)
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
-  if (absSec < 60) return rtf.format(Math.round(diffSec), 'second')
-  if (absSec < 3600) return rtf.format(Math.round(diffSec / 60), 'minute')
-  if (absSec < 86400) return rtf.format(Math.round(diffSec / 3600), 'hour')
-  return rtf.format(Math.round(diffSec / 86400), 'day')
-}
-
-const ASSET_TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
-  real_estate: { icon: Home, color: 'text-blue-600', bg: 'bg-blue-100' },
-  vehicle: { icon: Car, color: 'text-violet-600', bg: 'bg-violet-100' },
-  valuable: { icon: Gem, color: 'text-amber-600', bg: 'bg-amber-100' },
-  investment: { icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-100' },
-  stock: { icon: LineChart, color: 'text-sky-600', bg: 'bg-sky-100' },
-  etf: { icon: Layers, color: 'text-teal-600', bg: 'bg-teal-100' },
-  crypto: { icon: Bitcoin, color: 'text-orange-600', bg: 'bg-orange-100' },
-  fund: { icon: PieChart, color: 'text-indigo-600', bg: 'bg-indigo-100' },
-  other: { icon: Package, color: 'text-slate-600', bg: 'bg-slate-100' },
-}
-
-function getTypeConfig(type: string) {
-  return ASSET_TYPE_CONFIG[type] ?? ASSET_TYPE_CONFIG['other']
-}
+import { refetchAssetLedgerViews } from '@/lib/asset-queries'
+import { AssetIcon } from '@/components/assets/AssetIcon'
+import { getTypeConfig } from '@/components/assets/asset-types'
+import { AssetDetailDrawer } from '@/components/assets/AssetDetailDrawer'
+import { AddHoldingTransactionDialog } from '@/components/assets/AddHoldingTransactionDialog'
+import { formatCurrency, formatRelativeTime, assetErrorMessage } from '@/components/assets/asset-format'
+import { txTotal, hasFilterableTicker, isLedgerBacked } from '@/lib/asset-detail-utils'
 
 const ASSET_TYPES = [
   'stock',
@@ -175,18 +101,6 @@ const GROWTH_FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const
 // Ativo · Quant. · Preço Médio · Preço Atual · Rentab. · Saldo · % · actions.
 const HOLDINGS_GRID = 'minmax(0,2.4fr) 0.7fr 1.1fr 1fr 0.9fr 1.3fr 0.6fr 4.5rem'
 
-// Surface the backend's actual error message (FastAPI puts it in
-// response.data.detail) instead of a generic toast. Makes failures
-// diagnosable — e.g. the oversell guard message, or a "Not Found" when a
-// transaction endpoint is missing because the backend is older than the
-// frontend (issue #315) — rather than a cryptic "Error".
-function assetErrorMessage(e: unknown, fallback: string): string {
-  const resp = (e as { response?: { data?: { detail?: unknown }; status?: number } })?.response
-  const detail = resp?.data?.detail
-  if (typeof detail === 'string' && detail.trim()) return detail
-  return resp?.status ? `${fallback} (${resp.status})` : fallback
-}
-
 export default function AssetsPage() {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
@@ -204,15 +118,24 @@ export default function AssetsPage() {
   })
 
   const [activeTab, setActiveTab] = useState<'holdings' | 'transactions'>('holdings')
-  // Holding id for the lightweight "add transaction to this holding" dialog,
-  // opened from the holdings table ("+ add buys") and the inline ledger.
-  const [addTxAssetId, setAddTxAssetId] = useState<string | null>(null)
-  const openAddTransaction = (id: string) => setAddTxAssetId(id)
+  // Holding and direction for the "add transaction to this holding" dialog,
+  // opened from the holdings table ("+ add buys") and from the drawer's two
+  // primary actions, which pre-set the direction.
+  const [addTx, setAddTx] = useState<{
+    id: string
+    kind: 'buy' | 'sell'
+    tx?: AssetTransaction
+  } | null>(null)
+  const openAddTransaction = (id: string, kind: 'buy' | 'sell' = 'buy') => setAddTx({ id, kind })
+  const openEditTransaction = (id: string, tx: AssetTransaction) => setAddTx({ id, kind: tx.kind, tx })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [pendingGrowthSave, setPendingGrowthSave] = useState<Record<string, unknown> | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // Asset whose detail drawer is open (null = closed). T11 syncs this with
+  // the `?asset=` URL parameter; it stays the single source of truth for the
+  // drawer either way.
+  const [openAssetId, setOpenAssetId] = useState<string | null>(null)
 
   // Wallet (AssetGroup) dialog state
   const [walletDialogOpen, setWalletDialogOpen] = useState(false)
@@ -336,6 +259,82 @@ export default function AssetsPage() {
     assetsCtxKey,
   )
 
+  // The drawer's asset, resolved against the collection-filtered list rather
+  // than fetched by id — resolving elsewhere would open a drawer for an asset
+  // the collection filter deliberately hid.
+  const openAsset = useMemo(
+    () => (openAssetId ? ((assetsList ?? []).find((a) => a.id === openAssetId) ?? null) : null),
+    [openAssetId, assetsList],
+  )
+
+  // --- `?asset=<id>` -------------------------------------------------------
+  // A holding is a durable thing worth linking to, so the drawer lives in the
+  // URL: it survives a reload and answers the back button. The push-vs-replace
+  // discipline below is lifted from pages/reports.tsx, which already debugged
+  // this; see the comment there about the spurious duplicate history entries.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const syncingFromUrlRef = useRef(false)
+  const prevSearchRef = useRef<string | null>(null)
+  const didMountRef = useRef(false)
+
+  // URL → state
+  useEffect(() => {
+    const search = searchParams.toString()
+    if (prevSearchRef.current === search) return
+    prevSearchRef.current = search
+    const urlAsset = searchParams.get('asset')
+    setOpenAssetId((prev) => {
+      if (prev === (urlAsset ?? null)) return prev
+      syncingFromUrlRef.current = true
+      return urlAsset ?? null
+    })
+  }, [searchParams])
+
+  // state → URL
+  useEffect(() => {
+    if (syncingFromUrlRef.current) {
+      syncingFromUrlRef.current = false
+      didMountRef.current = true
+      return
+    }
+    const params = new URLSearchParams(window.location.search)
+    const hadParam = params.has('asset')
+    if (openAssetId) params.set('asset', openAssetId)
+    else params.delete('asset')
+    // Push only when the drawer goes from closed to open. Switching between
+    // holdings replaces, so back doesn't walk through every one the user
+    // glanced at; closing replaces too, so back doesn't reopen what was just
+    // dismissed. Either way one back press lands on the plain holdings view
+    // rather than leaving /assets.
+    const shouldPush = didMountRef.current && !hadParam && !!openAssetId
+    didMountRef.current = true
+    setSearchParams(params, { replace: !shouldPush })
+    // `setSearchParams` is intentionally excluded: react-router-dom returns a
+    // new reference on every navigation, and reacting to that alone pushed a
+    // spurious duplicate history entry on every update (see reports.tsx).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAssetId])
+
+  // Selling a whole position makes the backend set `sell_date`
+  // (recompute_and_cache), which drops the holding out of the active list the
+  // drawer's asset came from. Say what happened instead of leaving a drawer
+  // bound to an object that no longer exists.
+  const drawerResolvedRef = useRef(false)
+  useEffect(() => {
+    if (!openAssetId) {
+      drawerResolvedRef.current = false
+      return
+    }
+    if (openAsset) {
+      drawerResolvedRef.current = true
+      return
+    }
+    if (isLoading) return
+    if (drawerResolvedRef.current) toast.info(t('assets.drawerClosedGone'))
+    drawerResolvedRef.current = false
+    setOpenAssetId(null)
+  }, [openAssetId, openAsset, isLoading, t])
+
   // `refetchQueries` (vs. `invalidateQueries`) forces an immediate refetch
   // regardless of stale-state heuristics. Our global staleTime of 5 min
   // combined with the dialog-close re-render was sometimes leaving the
@@ -373,7 +372,7 @@ export default function AssetsPage() {
     onSuccess: () => {
       refetchAssetViews()
       setDeletingId(null)
-      if (expandedId === deletingId) setExpandedId(null)
+      if (openAssetId === deletingId) setOpenAssetId(null)
       toast.success(t('assets.deleted'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
@@ -570,7 +569,6 @@ export default function AssetsPage() {
     setTickerSearchLoading(false)
   }
 
-
   function openCreate() {
     setEditingAsset(null)
     setFormName('')
@@ -662,7 +660,6 @@ export default function AssetsPage() {
       }
     }
 
-
     if (!editingAsset && formCurrentValue) {
       payload.current_value = parseFloat(formCurrentValue)
     }
@@ -713,7 +710,6 @@ export default function AssetsPage() {
   function renderHoldingRow(asset: Asset) {
     const config = getTypeConfig(asset.type)
     const Icon = config.icon
-    const isExpanded = expandedId === asset.id
     const isSynced = asset.source !== 'manual'
     const isMarketPriced = asset.valuation_method === 'market_price'
     const isProviderOwned = isSynced && !isMarketPriced
@@ -733,7 +729,7 @@ export default function AssetsPage() {
         <div
           className="grid items-center gap-2 px-3 py-3 cursor-pointer hover:bg-muted/20 transition-colors text-sm"
           style={{ gridTemplateColumns: HOLDINGS_GRID }}
-          onClick={() => setExpandedId(isExpanded ? null : asset.id)}
+          onClick={() => setOpenAssetId(asset.id)}
         >
           {/* Ativo */}
           <div className="flex items-center gap-2.5 min-w-0">
@@ -820,29 +816,12 @@ export default function AssetsPage() {
                 </button>
               </>
             )}
-            {isExpanded ? <ChevronUp size={15} className="text-muted-foreground" /> : <ChevronDown size={15} className="text-muted-foreground" />}
+            {/* The row opens a drawer now, so it points sideways rather than
+                promising an in-place expansion. */}
+            <ChevronRight size={15} className="text-muted-foreground" />
           </div>
         </div>
 
-        {isExpanded && (
-          isMarketPriced ? (
-            <>
-              {/* Value-evolution chart on top, then the buy/sell ledger. */}
-              <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} chartOnly />
-              <HoldingLedger
-                asset={asset}
-                locale={locale}
-                dateLocale={dateLocale}
-                mask={mask}
-                canWrite={canWrite}
-                onAdd={() => openAddTransaction(asset.id)}
-                onChanged={refetchAssetViews}
-              />
-            </>
-          ) : (
-            <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} />
-          )
-        )}
       </div>
     )
   }
@@ -1062,6 +1041,7 @@ export default function AssetsPage() {
           mask={mask}
           canWrite={canWrite}
           onChanged={refetchAssetViews}
+          onOpenAsset={setOpenAssetId}
         />
       ) : (
       <>
@@ -1380,7 +1360,6 @@ export default function AssetsPage() {
               </div>
             )}
 
-
             {/* Growth Rule Settings */}
             {formMethod === 'growth_rule' && (
               <div className="space-y-3 p-3.5 rounded-xl border border-primary/20 bg-primary/5">
@@ -1676,10 +1655,26 @@ export default function AssetsPage() {
           inline ledger). Brand-new tickers go through Add Asset / the
           Transactions tab. */}
       <AddHoldingTransactionDialog
-        assetId={addTxAssetId}
-        holding={(assetsList ?? []).find((a) => a.id === addTxAssetId) ?? null}
+        assetId={addTx?.id ?? null}
+        holding={(assetsList ?? []).find((a) => a.id === addTx?.id) ?? null}
+        initialKind={addTx?.kind ?? 'buy'}
+        editingTx={addTx?.tx ?? null}
         locale={locale}
-        onClose={() => setAddTxAssetId(null)}
+        onClose={() => setAddTx(null)}
+        onChanged={refetchAssetViews}
+      />
+
+      {/* The holding's detail surface — replaces the old inline row expansion. */}
+      <AssetDetailDrawer
+        asset={openAsset}
+        portfolioTotalPrimary={portfolioTotalPrimary}
+        userCurrency={userCurrency}
+        locale={locale}
+        dateLocale={dateLocale}
+        canWrite={canWrite}
+        onClose={() => setOpenAssetId(null)}
+        onAddTransaction={openAddTransaction}
+        onEditTransaction={openEditTransaction}
         onChanged={refetchAssetViews}
       />
     </div>
@@ -1941,309 +1936,6 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
   )
 }
 
-// Marker drawn on the value chart where a buy (green) or sell (red) happened.
-// Recharts calls this per data point; non-trade points render an empty group.
-function renderAssetTradeDot(props: {
-  cx?: number; cy?: number; index?: number; payload?: { trades?: AssetTransaction[] }
-}) {
-  const { cx, cy, index, payload } = props
-  const trades = payload?.trades
-  if (cx == null || cy == null || !trades || trades.length === 0) {
-    return <g key={`td-${index}`} />
-  }
-  const hasBuy = trades.some(t => t.kind === 'buy')
-  const hasSell = trades.some(t => t.kind === 'sell')
-  const color = hasSell && !hasBuy ? '#F43F5E' : hasBuy && !hasSell ? '#10B981' : '#6366F1'
-  return (
-    <circle key={`td-${index}`} cx={cx} cy={cy} r={4} fill={color} stroke="var(--card)" strokeWidth={1.5} />
-  )
-}
-
-function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purchasePrice, purchaseDate, valuationMethod, canWrite, chartOnly = false }: {
-  assetId: string; currency: string; locale: string; dateLocale: string
-  purchasePrice: number | null; purchaseDate: string | null
-  valuationMethod: string
-  canWrite: boolean
-  // When true, render only the value-evolution chart (used above the ledger
-  // for market-priced holdings) — no manual value form / value-history list.
-  chartOnly?: boolean
-}) {
-  const { t } = useTranslation()
-  const { mask } = usePrivacyMode()
-  const queryClient = useQueryClient()
-
-  const [valueAmount, setValueAmount] = useState('')
-  const [valueDate, setValueDate] = useState(new Date().toISOString().slice(0, 10))
-
-  const { data: values, isLoading: valuesLoading } = useQuery({
-    queryKey: ['asset-values', assetId],
-    queryFn: () => assets.values(assetId),
-  })
-
-  const { data: trend } = useQuery({
-    queryKey: ['asset-trend', assetId],
-    queryFn: () => assets.valueTrend(assetId),
-  })
-
-  // Build full trend: purchase point + stored values
-  const trendWithPurchase = useMemo(() => {
-    if (!trend) return []
-    let result = [...trend]
-
-    // Prepend purchase point if it predates the first value
-    if (purchasePrice && purchaseDate) {
-      if (result.length === 0 || purchaseDate < result[0].date) {
-        result = [{ date: purchaseDate, amount: purchasePrice }, ...result]
-      }
-    }
-
-    return result
-  }, [trend, purchasePrice, purchaseDate])
-
-  // Buy/sell markers on the value chart (shares the ledger's query cache).
-  // Without these, a jump in the line could be either a price move or a
-  // quantity change — the markers label "you bought/sold here".
-  const { data: assetTrades } = useQuery({
-    queryKey: ['asset-transactions', assetId],
-    queryFn: () => assets.transactions(assetId),
-    enabled: valuationMethod === 'market_price',
-  })
-  const chartData = useMemo(() => {
-    const pts = trendWithPurchase.map(p => ({ ...p, trades: [] as AssetTransaction[] }))
-    if (!assetTrades || pts.length === 0) return pts
-    for (const tx of assetTrades) {
-      const txTime = new Date(tx.date + 'T00:00:00').getTime()
-      let best = 0
-      let bestDiff = Infinity
-      for (let i = 0; i < pts.length; i++) {
-        const diff = Math.abs(new Date(pts[i].date + 'T00:00:00').getTime() - txTime)
-        if (diff < bestDiff) { bestDiff = diff; best = i }
-      }
-      pts[best].trades.push(tx)
-    }
-    return pts
-  }, [trendWithPurchase, assetTrades])
-
-  // Build value history with purchase as the initial entry
-  const valuesWithPurchase = useMemo(() => {
-    if (!values) return []
-    if (!purchasePrice || !purchaseDate) return values
-    const hasPurchaseValue = values.some(v => v.date === purchaseDate && v.amount === purchasePrice)
-    if (hasPurchaseValue) return values
-    const purchaseEntry: AssetValue = {
-      id: 'purchase',
-      asset_id: assetId,
-      amount: purchasePrice,
-      date: purchaseDate,
-      source: 'purchase',
-    }
-    return [...values, purchaseEntry]
-  }, [values, purchasePrice, purchaseDate, assetId])
-
-  const addValueMutation = useMutation({
-    mutationFn: ({ assetId: id, ...data }: { assetId: string; amount: number; date: string }) =>
-      assets.addValue(id, data),
-    onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ['assets'] })
-      queryClient.refetchQueries({ queryKey: ['asset-values', assetId] })
-      queryClient.refetchQueries({ queryKey: ['asset-trend', assetId] })
-      queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
-      queryClient.refetchQueries({ queryKey: ['dashboard'] })
-      setValueAmount('')
-      toast.success(t('assets.valueAdded'))
-    },
-    onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
-  })
-
-  const deleteValueMutation = useMutation({
-    mutationFn: (valueId: string) => assets.deleteValue(valueId),
-    onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ['assets'] })
-      queryClient.refetchQueries({ queryKey: ['asset-values', assetId] })
-      queryClient.refetchQueries({ queryKey: ['asset-trend', assetId] })
-      queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
-      queryClient.refetchQueries({ queryKey: ['dashboard'] })
-      toast.success(t('assets.valueDeleted'))
-    },
-    onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
-  })
-
-  // Determine chart color based on trend direction
-  const trendIsPositive = trendWithPurchase.length >= 2
-    ? trendWithPurchase[trendWithPurchase.length - 1].amount >= trendWithPurchase[0].amount
-    : true
-  const chartColor = trendIsPositive ? '#10B981' : '#F43F5E'
-
-  const hasChart = trendWithPurchase.length > 1
-  // In chart-only mode (market-priced holdings, paired with the ledger) there's
-  // nothing to show until the value series has at least two points.
-  if (chartOnly && !hasChart) return null
-
-  return (
-    <div className="border-t border-border px-5 py-5 space-y-5 bg-muted/5">
-      {/* Value Trend Chart */}
-      {hasChart && (
-        <div>
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3">{t('assets.valueTrend')}</p>
-          <div className="h-44 -mx-1">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id={`gradient-${assetId}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={chartColor} stopOpacity={0.2} />
-                    <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" strokeOpacity={0.5} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v: string) => new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={56}
-                  domain={['dataMin', 'dataMax']}
-                  tickFormatter={(v: number) => {
-                    const abs = Math.abs(v)
-                    let formatted: string
-                    if (abs >= 1_000_000) formatted = `${(v / 1_000_000).toFixed(1)}M`
-                    else if (abs >= 1_000) formatted = `${(v / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}k`
-                    else formatted = v.toLocaleString(loc, { maximumFractionDigits: 0 })
-                    return mask(formatted)
-                  }}
-                />
-                <RechartsTooltip
-                  content={({ active, payload, label }) => {
-                    if (!active || !payload?.length) return null
-                    const pt = payload[0].payload as { amount?: number; trades?: AssetTransaction[] }
-                    return (
-                      <div style={{ background: 'var(--card)', color: 'var(--foreground)', border: '1px solid var(--border)', borderRadius: '0.75rem', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '8px 10px' }}>
-                        <p style={{ fontWeight: 600, marginBottom: 4 }}>
-                          {new Date(String(label) + 'T00:00:00').toLocaleDateString(dateLoc, { day: 'numeric', month: 'long', year: 'numeric' })}
-                        </p>
-                        <div style={{ fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(pt.amount ?? 0, currency, loc))}</div>
-                        {pt.trades?.map((tx) => (
-                          <div key={tx.id} style={{ marginTop: 3, fontSize: 11, fontWeight: 500, color: tx.kind === 'buy' ? '#10B981' : '#F43F5E' }}>
-                            {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')} {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, currency, loc))}
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="amount"
-                  stroke={chartColor}
-                  strokeWidth={2}
-                  fill={`url(#gradient-${assetId})`}
-                  dot={renderAssetTradeDot}
-                  activeDot={{ r: 4, strokeWidth: 2, fill: 'var(--card)', stroke: chartColor }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      {/* Add Value Form — only for manual assets */}
-      {!chartOnly && valuationMethod === 'manual' && canWrite && <div className="flex items-end gap-2">
-        <div className="flex-1">
-          <Label className="text-[11px] text-muted-foreground">{t('assets.amount')}</Label>
-          <Input
-            type="number"
-            step="any"
-            value={valueAmount}
-            onChange={e => setValueAmount(e.target.value)}
-            placeholder="0.00"
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="w-36">
-          <Label className="text-[11px] text-muted-foreground">{t('assets.date')}</Label>
-          <DatePickerInput value={valueDate} onChange={setValueDate} />
-        </div>
-        <Button
-          size="sm"
-          className="h-8 px-3 text-xs"
-          disabled={!valueAmount || addValueMutation.isPending}
-          onClick={() => {
-            if (valueAmount) {
-              addValueMutation.mutate({
-                assetId,
-                amount: parseFloat(valueAmount),
-                date: valueDate,
-              })
-            }
-          }}
-        >
-          <Plus size={14} className="mr-1" />
-          {t('assets.addValue')}
-        </Button>
-      </div>}
-
-      {/* Value History */}
-      {!chartOnly && <div>
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('assets.valueHistory')}</p>
-        {valuesLoading ? (
-          <Skeleton className="h-20 w-full rounded-lg" />
-        ) : valuesWithPurchase.length > 0 ? (
-          <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
-            {valuesWithPurchase.map((v: AssetValue, idx: number) => {
-              const isPurchase = v.source === 'purchase'
-              // Calculate change from previous entry (next in array since sorted desc)
-              const prev = valuesWithPurchase[idx + 1]
-              const change = prev ? v.amount - prev.amount : null
-              const changePct = prev && prev.amount !== 0 ? (change! / prev.amount) * 100 : null
-
-              return (
-                <div key={v.id} className={`flex items-center justify-between py-2 px-3 transition-colors ${isPurchase ? 'bg-primary/5' : 'hover:bg-muted/30'}`}>
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-sm tabular-nums font-semibold text-foreground">
-                      {mask(formatCurrency(v.amount, currency, loc))}
-                    </span>
-                    {change != null && (
-                      <span className={`text-[11px] tabular-nums font-medium ${change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                        {change >= 0 ? '+' : ''}{mask(formatCurrency(change, currency, loc))}
-                        {changePct != null && ` (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge variant={isPurchase ? 'default' : 'outline'} className={`text-[10px] px-1.5 py-0 ${isPurchase ? 'bg-primary/15 text-primary border-primary/30' : ''}`}>
-                      {t(`assets.source${v.source.charAt(0).toUpperCase() + v.source.slice(1)}`)}
-                    </Badge>
-                    <span className="text-[11px] text-muted-foreground tabular-nums">
-                      {new Date(v.date + 'T00:00:00').toLocaleDateString(dateLoc)}
-                    </span>
-                    {valuationMethod === 'manual' && v.source === 'manual' && canWrite && (
-                      <button
-                        onClick={() => deleteValueMutation.mutate(v.id)}
-                        className="p-1 rounded text-muted-foreground/40 hover:text-rose-600 transition-colors"
-                        disabled={deleteValueMutation.isPending}
-                        title={t('common.delete')}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground py-3 text-center">{t('dashboard.noData')}</p>
-        )}
-      </div>}
-    </div>
-  )
-}
-
 // Transactions tab (issue #235): the buy/sell ledger behind the consolidated
 // holdings. Lists every transaction across the portfolio and lets users add a
 // buy (to a new or existing ticker), record a sell, or edit/delete entries.
@@ -2256,6 +1948,7 @@ function AssetTransactionsTab({
   mask,
   canWrite,
   onChanged,
+  onOpenAsset,
 }: {
   holdings: Asset[]
   wallets: AssetGroup[]
@@ -2264,24 +1957,67 @@ function AssetTransactionsTab({
   mask: (v: string) => string
   canWrite: boolean
   onChanged: () => void
+  onOpenAsset: (assetId: string) => void
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
+  // Server-side filters. `GET /assets/transactions` has always accepted these;
+  // the tab simply never sent them, which is why a portfolio-wide ledger had
+  // no way to be narrowed. They live in the query key, so changing one is a
+  // refetch rather than a filter over a fully-fetched array — which works
+  // today and fails at the first long ledger.
+  const [filterTicker, setFilterTicker] = useState<string | null>(null)
+  const [filterKind, setFilterKind] = useState<'buy' | 'sell' | null>(null)
+  const hasFilters = !!filterTicker || !!filterKind
+
   const { data: txs, isLoading } = useQuery({
-    queryKey: ['asset-transactions'],
-    queryFn: () => assets.allTransactions(),
+    queryKey: ['asset-transactions', 'all', filterTicker, filterKind],
+    queryFn: () =>
+      assets.allTransactions({
+        ticker: filterTicker ?? undefined,
+        kind: filterKind ?? undefined,
+      }),
   })
 
-  const marketHoldings = useMemo(
-    () => holdings.filter((h) => h.valuation_method === 'market_price' && !h.sell_date),
+  // Every asset that can appear in the ledger, keyed by its stored ticker.
+  // Deliberately NOT `externalLinksFor`'s test: a Tesouro Direto TD: symbol is
+  // meaningless to a data provider but a perfectly good filter key, and sold
+  // holdings still have trades worth finding.
+  const filterableTickers = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const h of holdings) {
+      if (hasFilterableTicker(h) && !seen.has(h.ticker!)) {
+        seen.set(h.ticker!, h.ticker!.startsWith('TD:') ? h.name : `${h.ticker} · ${h.name}`)
+      }
+    }
+    return [...seen.entries()].sort((a, b) => a[1].localeCompare(b[1]))
+  }, [holdings])
+
+  // The drawer resolves an asset against the collection-filtered list, but this
+  // tab lists trades portfolio-wide. With a collection active, some rows point
+  // at assets the drawer cannot open — so those rows are not made clickable
+  // rather than offering a click that does nothing.
+  const openableAssetIds = useMemo(() => new Set(holdings.map((h) => h.id)), [holdings])
+
+  // Holdings a trade can be recorded against. Keyed on whether the ledger
+  // drives the holding — NOT on `valuation_method`: a `manual` asset can carry
+  // a full ledger, and filtering on the method left this dropdown empty for
+  // any portfolio built that way, so an existing holding could not be picked
+  // and "new ticker" was the only option — which would have created a
+  // duplicate. See `isLedgerBacked`.
+  const tradableHoldings = useMemo(
+    () =>
+      holdings.filter(
+        (h) => (isLedgerBacked(h) || h.valuation_method === 'market_price') && !h.sell_date,
+      ),
     [holdings],
   )
-  // Market holdings that exist but have no recorded buys → flagged in amber so
-  // the user knows their average price / return can't be computed yet.
+  // Tradable holdings with units but no recorded cost → flagged in amber, since
+  // their average price and return cannot be computed until buys are added.
   const holdingsWithoutCost = useMemo(
-    () => marketHoldings.filter((h) => h.average_price == null && h.units != null),
-    [marketHoldings],
+    () => tradableHoldings.filter((h) => h.average_price == null && h.units != null),
+    [tradableHoldings],
   )
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -2298,8 +2034,10 @@ function AssetTransactionsTab({
   const [formFee, setFormFee] = useState('')
   const [formDate, setFormDate] = useState<string>(new Date().toISOString().slice(0, 10))
 
+  // No asset id here: this tab edits trades across the whole portfolio, so the
+  // per-asset value series are refetched by the drawer that owns them.
   function afterChange() {
-    queryClient.refetchQueries({ queryKey: ['asset-transactions'] })
+    refetchAssetLedgerViews(queryClient)
     onChanged()
   }
 
@@ -2351,7 +2089,7 @@ function AssetTransactionsTab({
   function openAdd() {
     setEditingTx(null)
     setFormKind('buy')
-    setFormHolding(marketHoldings.length > 0 ? marketHoldings[0].id : '__new__')
+    setFormHolding(tradableHoldings.length > 0 ? tradableHoldings[0].id : '__new__')
     setFormTicker('')
     setFormGroupId('')
     setFormQuantity('')
@@ -2388,7 +2126,7 @@ function AssetTransactionsTab({
   const isNewTicker = !editingTx && formHolding === '__new__'
   // Warn before a sell that exceeds the held quantity (no shorting). Only on a
   // fresh sell into an existing holding; edits are validated server-side.
-  const selectedHeldUnits = marketHoldings.find((h) => h.id === formHolding)?.units ?? 0
+  const selectedHeldUnits = tradableHoldings.find((h) => h.id === formHolding)?.units ?? 0
   const oversell =
     !editingTx && !isNewTicker && formKind === 'sell' && !!formQuantity && parseFloat(formQuantity) > selectedHeldUnits
   const canSave =
@@ -2408,6 +2146,52 @@ function AssetTransactionsTab({
             <Plus size={16} />
             {t('assets.addTransaction')}
           </Button>
+        )}
+      </div>
+
+      {/* Filters. Both go to the server via the endpoint's existing `ticker`
+          and `kind` parameters. The asset list only offers holdings that
+          actually carry a ticker, so no option can come back empty. */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Select
+          value={filterTicker ?? '__all__'}
+          onValueChange={(v) => setFilterTicker(v === '__all__' ? null : v)}
+        >
+          <SelectTrigger className="w-[240px] h-8 text-xs">
+            <SelectValue placeholder={t('assets.allAssets')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">{t('assets.allAssets')}</SelectItem>
+            {filterableTickers.map(([ticker, label]) => (
+              <SelectItem key={ticker} value={ticker}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="inline-flex items-center gap-1 p-0.5 rounded-lg bg-muted">
+          {([null, 'buy', 'sell'] as const).map((k) => (
+            <button
+              key={k ?? 'all'}
+              onClick={() => setFilterKind(k)}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                filterKind === k
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {k === null ? t('assets.filterAll') : k === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+            </button>
+          ))}
+        </div>
+
+        {hasFilters && (
+          <button
+            onClick={() => { setFilterTicker(null); setFilterKind(null) }}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <X size={12} />
+            {t('assets.clearFilters')}
+          </button>
         )}
       </div>
 
@@ -2449,7 +2233,12 @@ function AssetTransactionsTab({
           {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}
         </div>
       ) : (txs ?? []).length === 0 ? (
-        holdingsWithoutCost.length === 0 ? (
+        hasFilters ? (
+          <div className="text-center py-16">
+            <TrendingUp className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
+            <p className="text-muted-foreground">{t('assets.noMatchingTx')}</p>
+          </div>
+        ) : holdingsWithoutCost.length === 0 ? (
           <div className="text-center py-16">
             <TrendingUp className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
             <p className="text-muted-foreground">{t('assets.noTransactions')}</p>
@@ -2458,7 +2247,7 @@ function AssetTransactionsTab({
       ) : (
         <div className="rounded-xl border border-border overflow-hidden divide-y divide-border">
           {(txs ?? []).map((tx) => {
-            const total = tx.quantity * tx.price
+            const total = txTotal(tx)
             const cur = tx.currency ?? 'USD'
             return (
               <div key={tx.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
@@ -2468,15 +2257,21 @@ function AssetTransactionsTab({
                 >
                   {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
                 </Badge>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
+                <button
+                  type="button"
+                  onClick={() => openableAssetIds.has(tx.asset_id) && onOpenAsset(tx.asset_id)}
+                  disabled={!openableAssetIds.has(tx.asset_id)}
+                  className="flex-1 min-w-0 text-left group disabled:cursor-default"
+                  title={openableAssetIds.has(tx.asset_id) ? t('assets.openHolding') : undefined}
+                >
+                  <p className="text-sm font-medium text-foreground truncate group-enabled:group-hover:underline">
                     {tx.ticker || tx.asset_name}
                   </p>
                   <p className="text-[11px] text-muted-foreground tabular-nums">
                     {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
                     {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, cur, locale))}
                   </p>
-                </div>
+                </button>
                 <div className="text-right shrink-0">
                   <p className="text-sm font-semibold tabular-nums text-foreground">
                     {mask(formatCurrency(total, cur, locale))}
@@ -2531,7 +2326,7 @@ function AssetTransactionsTab({
                   }}
                 >
                   <option value="__new__">{t('assets.newTicker')}</option>
-                  {marketHoldings.map((h) => (
+                  {tradableHoldings.map((h) => (
                     <option key={h.id} value={h.id}>
                       {h.ticker || h.name}
                     </option>
@@ -2652,217 +2447,3 @@ function AssetTransactionsTab({
   )
 }
 
-// Inline buy/sell ledger shown when a holding row is expanded (the
-// "Lançamentos" of the reference). Lists the holding's transactions and
-// offers a one-tap add — the consolidated row above is recomputed server-side.
-function HoldingLedger({
-  asset,
-  locale,
-  dateLocale,
-  mask,
-  canWrite,
-  onAdd,
-  onChanged,
-}: {
-  asset: Asset
-  locale: string
-  dateLocale: string
-  mask: (v: string) => string
-  canWrite: boolean
-  onAdd: () => void
-  onChanged: () => void
-}) {
-  const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const { data: txs, isLoading } = useQuery({
-    queryKey: ['asset-transactions', asset.id],
-    queryFn: () => assets.transactions(asset.id),
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => assets.deleteTransaction(id),
-    onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ['asset-transactions', asset.id] })
-      queryClient.refetchQueries({ queryKey: ['asset-transactions'] })
-      onChanged()
-      toast.success(t('assets.txDeleted'))
-    },
-    onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
-  })
-
-  return (
-    <div className="border-t border-border bg-muted/10 px-4 py-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-          {t('assets.ledgerTitle')}
-        </p>
-        {canWrite && (
-          <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1" onClick={onAdd}>
-            <Plus size={13} />
-            {t('assets.addTransaction')}
-          </Button>
-        )}
-      </div>
-      {isLoading ? (
-        <Skeleton className="h-16 w-full rounded-lg" />
-      ) : (txs ?? []).length === 0 ? (
-        <p className="text-xs text-muted-foreground py-2">{t('assets.noLedgerYet')}</p>
-      ) : (
-        <div className="rounded-lg border border-border overflow-hidden divide-y divide-border bg-card">
-          {(txs ?? []).map((tx) => (
-            <div key={tx.id} className="flex items-center gap-3 px-3 py-2">
-              <Badge
-                variant="outline"
-                className={`text-[9px] px-1 py-0 shrink-0 ${tx.kind === 'buy' ? 'text-emerald-600 border-emerald-200' : 'text-rose-600 border-rose-200'}`}
-              >
-                {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
-              </Badge>
-              <span className="text-[11px] text-muted-foreground tabular-nums flex-1">
-                {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
-                {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, asset.currency, locale))}
-              </span>
-              <span className="text-xs font-semibold tabular-nums text-foreground">
-                {mask(formatCurrency(tx.quantity * tx.price, asset.currency, locale))}
-              </span>
-              {canWrite && (
-                <button
-                  onClick={() => deleteMutation.mutate(tx.id)}
-                  disabled={deleteMutation.isPending}
-                  className="p-1 rounded text-muted-foreground/50 hover:text-rose-600 transition-colors"
-                  title={t('common.delete')}
-                >
-                  <Trash2 size={12} />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Lightweight dialog to add a buy/sell to an already-existing holding. Used by
-// the holdings table ("+ add buys") and the inline ledger.
-function AddHoldingTransactionDialog({
-  assetId,
-  holding,
-  locale,
-  onClose,
-  onChanged,
-}: {
-  assetId: string | null
-  holding: Asset | null
-  locale: string
-  onClose: () => void
-  onChanged: () => void
-}) {
-  const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const [kind, setKind] = useState<'buy' | 'sell'>('buy')
-  const [quantity, setQuantity] = useState('')
-  const [price, setPrice] = useState('')
-  const [fee, setFee] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
-
-  useEffect(() => {
-    if (assetId) {
-      setKind('buy')
-      setQuantity('')
-      setPrice('')
-      setFee('')
-      setDate(new Date().toISOString().slice(0, 10))
-    }
-  }, [assetId])
-
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      assets.addTransaction(assetId!, {
-        kind,
-        quantity: parseFloat(quantity),
-        price: parseFloat(price),
-        fee: fee ? parseFloat(fee) : 0,
-        date,
-      }),
-    onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ['asset-transactions'] })
-      if (assetId) queryClient.refetchQueries({ queryKey: ['asset-transactions', assetId] })
-      onChanged()
-      onClose()
-      toast.success(t('assets.txSaved'))
-    },
-    onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
-  })
-
-  const cur = holding?.currency ?? 'USD'
-  const heldUnits = holding?.units ?? 0
-  const oversell = kind === 'sell' && !!quantity && parseFloat(quantity) > heldUnits
-  const canSave = !!quantity && parseFloat(quantity) > 0 && !!price && !oversell && !saveMutation.isPending
-
-  return (
-    <Dialog open={!!assetId} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {t('assets.addTransaction')}{holding ? ` · ${holding.ticker || holding.name}` : ''}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>{t('assets.txType')}</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['buy', 'sell'] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${kind === k ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
-                  onClick={() => setKind(k)}
-                >
-                  {k === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{t('assets.quantity')}</Label>
-              <Input type="number" step="any" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('assets.unitPrice')}</Label>
-              <Input type="number" step="any" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{t('assets.fee')}</Label>
-              <Input type="number" step="any" min="0" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('assets.date')}</Label>
-              <DatePickerInput value={date} onChange={setDate} />
-            </div>
-          </div>
-          {oversell && (
-            <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-              <AlertTriangle size={13} className="shrink-0" />
-              {t('assets.oversellWarning', { available: heldUnits })}
-            </p>
-          )}
-          {quantity && price && parseFloat(quantity) > 0 && (
-            <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-              <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
-              <span className="text-sm font-bold tabular-nums text-foreground">
-                {formatCurrency(parseFloat(quantity) * parseFloat(price) + (fee ? parseFloat(fee) : 0) * (kind === 'buy' ? 1 : -1), cur, locale)}
-              </span>
-            </div>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button onClick={() => saveMutation.mutate()} disabled={!canSave}>{t('common.save')}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
