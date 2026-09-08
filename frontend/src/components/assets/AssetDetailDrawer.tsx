@@ -5,7 +5,7 @@ import { X, Plus, Minus } from 'lucide-react'
 import { assets as assetsApi } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { Asset } from '@/types'
+import type { Asset, AssetTransaction } from '@/types'
 import { AssetIcon } from './AssetIcon'
 import { getTypeConfig } from './asset-types'
 import { AssetDetail } from './AssetDetail'
@@ -44,6 +44,7 @@ export function AssetDetailDrawer({
   canWrite,
   onClose,
   onAddTransaction,
+  onEditTransaction,
   onChanged,
 }: {
   /** `null` closes the drawer. */
@@ -56,6 +57,7 @@ export function AssetDetailDrawer({
   canWrite: boolean
   onClose: () => void
   onAddTransaction: (assetId: string, kind: 'buy' | 'sell') => void
+  onEditTransaction: (assetId: string, tx: AssetTransaction) => void
   onChanged: () => void
 }) {
   const { t } = useTranslation()
@@ -256,6 +258,7 @@ export function AssetDetailDrawer({
                     dateLocale={dateLocale}
                     canWrite={canWriteHere}
                     onAdd={() => onAddTransaction(asset.id, 'buy')}
+                    onEdit={(tx) => onEditTransaction(asset.id, tx)}
                     onChanged={onChanged}
                   />
                 </>

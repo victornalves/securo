@@ -4,7 +4,7 @@
 | ---------- | ------ |
 | Task       | T8     |
 | Feature    | 008    |
-| Status     | Todo   |
+| Status     | Done   |
 | Depends on | T2, T4 |
 | PR         |        |
 | Jira       |        |
@@ -64,3 +64,34 @@ totals consistent with the form; and an empty state that offers the purchase act
 
 The running-position column is the one place a reviewer can check T2's replay against reality:
 the top row must equal the `units` figure T5 renders a few lines above it.
+
+## Outcome
+
+`HoldingLedger` now carries direction filter chips with counts, a "position after" line per
+row, notes, edit and delete, and two distinct empty states.
+
+Four things decided while implementing:
+
+- **Editing reuses `AddHoldingTransactionDialog`**, extended with an optional `editingTx` prop,
+  rather than a second form. The page now holds `{ id, kind, tx? }` and one dialog serves both
+  add and edit — which is also what finally gives the in-form type toggle its documented
+  purpose: changing a trade's direction after the fact.
+- **The client-side oversell guard is skipped when editing**, and that is a bug avoided rather
+  than a shortcut. `holding.units` already has an existing sale's quantity subtracted out, so
+  comparing an edited quantity against it rejects legitimate edits — raising a sale from 4 to 6
+  on a holding now showing 11 units is not an oversell. The global transactions tab already
+  skipped the check for the same reason; the server replays the whole ledger and catches a real
+  one.
+- **A delete confirmation was added**, which the inline ledger never had — it deleted on the
+  first click. The wording is the existing `assets.confirmDeleteTx`, about recalculating the
+  average price.
+- **Running positions are computed over the whole ledger, never the filtered view.** "Units
+  held after this trade" is a fact about the position; deriving it from the visible rows would
+  make filtering to sells report a nonsense sequence.
+
+One real lint finding fixed rather than suppressed: `const all = txs ?? []` handed a fresh
+array reference to three `useMemo` hooks every render, so none of them memoized. Now
+`useMemo(() => txs ?? [], [txs])`.
+
+Three locale keys across nine files. `tsc` clean, 109/109, lint back to the two pre-existing
+warnings.

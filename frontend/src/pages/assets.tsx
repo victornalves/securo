@@ -112,8 +112,13 @@ export default function AssetsPage() {
   // Holding and direction for the "add transaction to this holding" dialog,
   // opened from the holdings table ("+ add buys") and from the drawer's two
   // primary actions, which pre-set the direction.
-  const [addTx, setAddTx] = useState<{ id: string; kind: 'buy' | 'sell' } | null>(null)
+  const [addTx, setAddTx] = useState<{
+    id: string
+    kind: 'buy' | 'sell'
+    tx?: AssetTransaction
+  } | null>(null)
   const openAddTransaction = (id: string, kind: 'buy' | 'sell' = 'buy') => setAddTx({ id, kind })
+  const openEditTransaction = (id: string, tx: AssetTransaction) => setAddTx({ id, kind: tx.kind, tx })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -1595,6 +1600,7 @@ export default function AssetsPage() {
         assetId={addTx?.id ?? null}
         holding={(assetsList ?? []).find((a) => a.id === addTx?.id) ?? null}
         initialKind={addTx?.kind ?? 'buy'}
+        editingTx={addTx?.tx ?? null}
         locale={locale}
         onClose={() => setAddTx(null)}
         onChanged={refetchAssetViews}
@@ -1610,6 +1616,7 @@ export default function AssetsPage() {
         canWrite={canWrite}
         onClose={() => setOpenAssetId(null)}
         onAddTransaction={openAddTransaction}
+        onEditTransaction={openEditTransaction}
         onChanged={refetchAssetViews}
       />
     </div>

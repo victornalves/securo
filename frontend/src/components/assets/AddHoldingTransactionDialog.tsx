@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { AlertTriangle } from 'lucide-react'
-import type { Asset } from '@/types'
+import type { Asset, AssetTransaction } from '@/types'
 import { formatCurrency, assetErrorMessage } from './asset-format'
 import { refetchAssetLedgerViews } from '@/lib/asset-queries'
 
@@ -28,6 +28,7 @@ export function AddHoldingTransactionDialog({
   assetId,
   holding,
   initialKind = 'buy',
+  editingTx = null,
   locale,
   onClose,
   onChanged,
@@ -35,6 +36,8 @@ export function AddHoldingTransactionDialog({
   assetId: string | null
   holding: Asset | null
   initialKind?: 'buy' | 'sell'
+  /** When set, the form edits this trade instead of recording a new one. */
+  editingTx?: AssetTransaction | null
   locale: string
   onClose: () => void
   onChanged: () => void
@@ -49,26 +52,38 @@ export function AddHoldingTransactionDialog({
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
 
   useEffect(() => {
-    if (assetId) {
-      setKind(initialKind)
-      setQuantity('')
-      setPrice('')
-      setFee('')
-      setNotes('')
-      setDate(new Date().toISOString().slice(0, 10))
+    if (!assetId) return
+    if (editingTx) {
+      setKind(editingTx.kind)
+      setQuantity(`${editingTx.quantity}`)
+      setPrice(`${editingTx.price}`)
+      setFee(editingTx.fee ? `${editingTx.fee}` : '')
+      setNotes(editingTx.notes ?? '')
+      setDate(editingTx.date)
+      return
     }
-  }, [assetId, initialKind])
+    setKind(initialKind)
+    setQuantity('')
+    setPrice('')
+    setFee('')
+    setNotes('')
+    setDate(new Date().toISOString().slice(0, 10))
+  }, [assetId, initialKind, editingTx])
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      assets.addTransaction(assetId!, {
+    mutationFn: () => {
+      const payload = {
         kind,
         quantity: parseFloat(quantity),
         price: parseFloat(price),
         fee: fee ? parseFloat(fee) : 0,
         date,
-        notes: notes.trim() || undefined,
-      }),
+        notes: notes.trim(),
+      }
+      return editingTx
+        ? assets.updateTransaction(editingTx.id, payload)
+        : assets.addTransaction(assetId!, { ...payload, notes: payload.notes || undefined })
+    },
     onSuccess: () => {
       refetchAssetLedgerViews(queryClient, assetId)
       onChanged()
@@ -80,7 +95,14 @@ export function AddHoldingTransactionDialog({
 
   const cur = holding?.currency ?? 'USD'
   const heldUnits = holding?.units ?? 0
-  const oversell = kind === 'sell' && !!quantity && parseFloat(quantity) > heldUnits
+  // Only guard a *new* sale here. `holding.units` already has an existing
+  // sale's quantity subtracted out, so comparing an edited quantity against it
+  // would reject legitimate edits (raising a sale of 4 to 6 on a holding now
+  // showing 11 units looks like an oversell but is not). The server replays
+  // the whole ledger and rejects a real oversell — same reasoning the global
+  // transactions tab already applies.
+  const oversell =
+    !editingTx && kind === 'sell' && !!quantity && parseFloat(quantity) > heldUnits
   const canSave = !!quantity && parseFloat(quantity) > 0 && !!price && !oversell && !saveMutation.isPending
 
   return (
@@ -88,7 +110,8 @@ export function AddHoldingTransactionDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {t('assets.addTransaction')}{holding ? ` · ${holding.ticker || holding.name}` : ''}
+            {editingTx ? t('assets.editTransaction') : t('assets.addTransaction')}
+            {holding ? ` · ${holding.ticker || holding.name}` : ''}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
