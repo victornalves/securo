@@ -990,6 +990,7 @@
     "addBuys": "додати купівлі",
     "ledgerTitle": "Транзакції",
     "noLedgerYet": "Поки немає транзакцій за цим активом.",
+    "drawerClosedGone": "Цей актив більше не входить до вашого активного портфеля.",
     "unitsShort": "од.",
     "avgPriceShort": "сер.",
     "tabHoldings": "Позиції",

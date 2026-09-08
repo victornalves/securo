@@ -990,6 +990,7 @@
     "addBuys": "Käufe hinzufügen",
     "ledgerTitle": "Transaktionen",
     "noLedgerYet": "Noch keine Transaktionen für diesen Vermögenswert.",
+    "drawerClosedGone": "Diese Position befindet sich nicht mehr in Ihrem aktiven Portfolio.",
     "unitsShort": "Stk.",
     "avgPriceShort": "Schnitt",
     "tabHoldings": "Bestand",

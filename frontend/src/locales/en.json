@@ -990,6 +990,7 @@
     "addBuys": "add buys",
     "ledgerTitle": "Transactions",
     "noLedgerYet": "No transactions for this holding yet.",
+    "drawerClosedGone": "This holding is no longer in your active portfolio.",
     "unitsShort": "units",
     "avgPriceShort": "avg",
     "tabHoldings": "Holdings",

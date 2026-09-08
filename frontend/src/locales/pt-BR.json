@@ -990,6 +990,7 @@
     "addBuys": "add compras",
     "ledgerTitle": "Lançamentos",
     "noLedgerYet": "Nenhum lançamento para este ativo ainda.",
+    "drawerClosedGone": "Este ativo não está mais na sua carteira ativa.",
     "unitsShort": "un",
     "avgPriceShort": "PM",
     "tabHoldings": "Carteira",

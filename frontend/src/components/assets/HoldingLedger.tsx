@@ -9,15 +9,15 @@ import { Plus, Trash2 } from 'lucide-react'
 import type { Asset } from '@/types'
 import { formatCurrency, assetErrorMessage } from './asset-format'
 import { refetchAssetLedgerViews } from '@/lib/asset-queries'
+import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 
-// Inline buy/sell ledger shown when a holding row is expanded (the
-// "Lançamentos" of the reference). Lists the holding's transactions and
-// offers a one-tap add — the consolidated row above is recomputed server-side.
+// The holding's buy/sell ledger, rendered inside the asset detail drawer.
+// Lists the holding's transactions and offers a one-tap add — the consolidated
+// figures above are recomputed server-side by _recompute.
 export function HoldingLedger({
   asset,
   locale,
   dateLocale,
-  mask,
   canWrite,
   onAdd,
   onChanged,
@@ -25,12 +25,12 @@ export function HoldingLedger({
   asset: Asset
   locale: string
   dateLocale: string
-  mask: (v: string) => string
   canWrite: boolean
   onAdd: () => void
   onChanged: () => void
 }) {
   const { t } = useTranslation()
+  const { mask } = usePrivacyMode()
   const queryClient = useQueryClient()
   const { data: txs, isLoading } = useQuery({
     queryKey: ['asset-transactions', asset.id],

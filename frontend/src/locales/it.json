@@ -990,6 +990,7 @@
     "addBuys": "agg. acquisti",
     "ledgerTitle": "Movimenti",
     "noLedgerYet": "Ancora nessun movimento per questa posizione.",
+    "drawerClosedGone": "Questa posizione non è più nel tuo portafoglio attivo.",
     "unitsShort": "un",
     "avgPriceShort": "PM",
     "tabHoldings": "Portafoglio",

@@ -26,7 +26,6 @@ import {
   Pencil,
   Trash2,
   ChevronDown,
-  ChevronUp,
   ChevronRight,
   RefreshCw,
   Wallet,
@@ -50,8 +49,7 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { refetchAssetLedgerViews } from '@/lib/asset-queries'
 import { AssetIcon } from '@/components/assets/AssetIcon'
 import { getTypeConfig } from '@/components/assets/asset-types'
-import { AssetDetail } from '@/components/assets/AssetDetail'
-import { HoldingLedger } from '@/components/assets/HoldingLedger'
+import { AssetDetailDrawer } from '@/components/assets/AssetDetailDrawer'
 import { AddHoldingTransactionDialog } from '@/components/assets/AddHoldingTransactionDialog'
 import { formatCurrency, formatRelativeTime, assetErrorMessage } from '@/components/assets/asset-format'
 
@@ -118,7 +116,10 @@ export default function AssetsPage() {
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [pendingGrowthSave, setPendingGrowthSave] = useState<Record<string, unknown> | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  // Asset whose detail drawer is open (null = closed). T11 syncs this with
+  // the `?asset=` URL parameter; it stays the single source of truth for the
+  // drawer either way.
+  const [openAssetId, setOpenAssetId] = useState<string | null>(null)
 
   // Wallet (AssetGroup) dialog state
   const [walletDialogOpen, setWalletDialogOpen] = useState(false)
@@ -242,6 +243,34 @@ export default function AssetsPage() {
     assetsCtxKey,
   )
 
+  // The drawer's asset, resolved against the collection-filtered list rather
+  // than fetched by id — resolving elsewhere would open a drawer for an asset
+  // the collection filter deliberately hid.
+  const openAsset = useMemo(
+    () => (openAssetId ? ((assetsList ?? []).find((a) => a.id === openAssetId) ?? null) : null),
+    [openAssetId, assetsList],
+  )
+
+  // Selling a whole position makes the backend set `sell_date`
+  // (recompute_and_cache), which drops the holding out of the active list the
+  // drawer's asset came from. Say what happened instead of leaving a drawer
+  // bound to an object that no longer exists.
+  const drawerResolvedRef = useRef(false)
+  useEffect(() => {
+    if (!openAssetId) {
+      drawerResolvedRef.current = false
+      return
+    }
+    if (openAsset) {
+      drawerResolvedRef.current = true
+      return
+    }
+    if (isLoading) return
+    if (drawerResolvedRef.current) toast.info(t('assets.drawerClosedGone'))
+    drawerResolvedRef.current = false
+    setOpenAssetId(null)
+  }, [openAssetId, openAsset, isLoading, t])
+
   // `refetchQueries` (vs. `invalidateQueries`) forces an immediate refetch
   // regardless of stale-state heuristics. Our global staleTime of 5 min
   // combined with the dialog-close re-render was sometimes leaving the
@@ -279,7 +308,7 @@ export default function AssetsPage() {
     onSuccess: () => {
       refetchAssetViews()
       setDeletingId(null)
-      if (expandedId === deletingId) setExpandedId(null)
+      if (openAssetId === deletingId) setOpenAssetId(null)
       toast.success(t('assets.deleted'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
@@ -617,7 +646,6 @@ export default function AssetsPage() {
   function renderHoldingRow(asset: Asset) {
     const config = getTypeConfig(asset.type)
     const Icon = config.icon
-    const isExpanded = expandedId === asset.id
     const isSynced = asset.source !== 'manual'
     const isMarketPriced = asset.valuation_method === 'market_price'
     const isProviderOwned = isSynced && !isMarketPriced
@@ -637,7 +665,7 @@ export default function AssetsPage() {
         <div
           className="grid items-center gap-2 px-3 py-3 cursor-pointer hover:bg-muted/20 transition-colors text-sm"
           style={{ gridTemplateColumns: HOLDINGS_GRID }}
-          onClick={() => setExpandedId(isExpanded ? null : asset.id)}
+          onClick={() => setOpenAssetId(asset.id)}
         >
           {/* Ativo */}
           <div className="flex items-center gap-2.5 min-w-0">
@@ -724,29 +752,12 @@ export default function AssetsPage() {
                 </button>
               </>
             )}
-            {isExpanded ? <ChevronUp size={15} className="text-muted-foreground" /> : <ChevronDown size={15} className="text-muted-foreground" />}
+            {/* The row opens a drawer now, so it points sideways rather than
+                promising an in-place expansion. */}
+            <ChevronRight size={15} className="text-muted-foreground" />
           </div>
         </div>
 
-        {isExpanded && (
-          isMarketPriced ? (
-            <>
-              {/* Value-evolution chart on top, then the buy/sell ledger. */}
-              <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} chartOnly />
-              <HoldingLedger
-                asset={asset}
-                locale={locale}
-                dateLocale={dateLocale}
-                mask={mask}
-                canWrite={canWrite}
-                onAdd={() => openAddTransaction(asset.id)}
-                onChanged={refetchAssetViews}
-              />
-            </>
-          ) : (
-            <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} />
-          )
-        )}
       </div>
     )
   }
@@ -1583,6 +1594,17 @@ export default function AssetsPage() {
         holding={(assetsList ?? []).find((a) => a.id === addTxAssetId) ?? null}
         locale={locale}
         onClose={() => setAddTxAssetId(null)}
+        onChanged={refetchAssetViews}
+      />
+
+      {/* The holding's detail surface — replaces the old inline row expansion. */}
+      <AssetDetailDrawer
+        asset={openAsset}
+        locale={locale}
+        dateLocale={dateLocale}
+        canWrite={canWrite}
+        onClose={() => setOpenAssetId(null)}
+        onAddTransaction={openAddTransaction}
         onChanged={refetchAssetViews}
       />
     </div>

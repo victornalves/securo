@@ -990,6 +990,7 @@
     "addBuys": "ajouter des achats",
     "ledgerTitle": "Transactions",
     "noLedgerYet": "Aucune transaction pour cette position pour l'instant.",
+    "drawerClosedGone": "Cet actif ne figure plus dans votre portefeuille actif.",
     "unitsShort": "unités",
     "avgPriceShort": "moy.",
     "tabHoldings": "Positions",

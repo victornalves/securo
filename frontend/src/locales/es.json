@@ -990,6 +990,7 @@
     "addBuys": "add compras",
     "ledgerTitle": "Movimientos",
     "noLedgerYet": "Aún no hay movimientos para este activo.",
+    "drawerClosedGone": "Este activo ya no está en tu cartera activa.",
     "unitsShort": "ud",
     "avgPriceShort": "PM",
     "tabHoldings": "Cartera",

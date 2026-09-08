@@ -4,7 +4,7 @@
 | ---------- | ------ |
 | Task       | T4     |
 | Feature    | 008    |
-| Status     | Todo   |
+| Status     | Done   |
 | Depends on | T1, T3 |
 | PR         |        |
 | Jira       |        |
@@ -80,3 +80,28 @@ Plus the *Buy and sell parity* criteria on synced and read-only assets.
 
 The close-on-disappear behavior is the plan's highest-likelihood risk. Get it right here
 rather than discovering it in T6 when sells become easy to trigger.
+
+## Outcome
+
+`components/assets/AssetDetailDrawer.tsx`, mounted from `pages/assets.tsx` alongside the other
+overlays. `expandedId` is gone, replaced by `openAssetId`; the 20-line expansion block in
+`renderHoldingRow` is gone; the chevron is now `ChevronRight`, since the row no longer promises
+an in-place expansion.
+
+Three things worth recording:
+
+- **The lint config forbids reading a ref during render.** The first implementation kept the
+  last asset in a ref so the panel would not empty itself during the 200 ms slide-out —
+  `react-hooks/refs` rejected it with 52 errors. Dropped in favour of exactly what
+  `TransactionDrillDown` does: the chrome stays mounted and animates, the contents render only
+  while an asset is open, so closing slides out an empty panel. Consistency with the existing
+  drawer is the better argument anyway.
+- **`HoldingLedger` now calls `usePrivacyMode()` itself** instead of taking a `mask` prop,
+  matching its sibling `AssetDetail`. One less prop to plumb through the drawer.
+- **No new locale key for the header subtitle.** It reuses the holdings row's own rule — the
+  name when a ticker headlines the panel, `Tesouro Direto` for a `TD:` symbol, otherwise the
+  translated type label. One key was added, `assets.drawerClosedGone`, for the
+  position-closed-while-open case.
+
+Verified: `tsc -b` clean, 106/106 tests, `eslint` back to the two pre-existing warnings and
+zero errors.

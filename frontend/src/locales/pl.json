@@ -1062,6 +1062,7 @@
     "addBuys": "dodaj zakupy",
     "ledgerTitle": "Transakcje",
     "noLedgerYet": "Brak transakcji dla tej pozycji.",
+    "drawerClosedGone": "Ta pozycja nie znajduje się już w Twoim aktywnym portfelu.",
     "unitsShort": "szt",
     "avgPriceShort": "śr",
     "tabHoldings": "Portfel",
