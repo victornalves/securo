@@ -17,6 +17,7 @@ import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { AlertTriangle } from 'lucide-react'
 import type { Asset } from '@/types'
 import { formatCurrency, assetErrorMessage } from './asset-format'
+import { refetchAssetLedgerViews } from '@/lib/asset-queries'
 
 // Lightweight dialog to add a buy/sell to an already-existing holding. Used by
 // the holdings table ("+ add buys") and the inline ledger.
@@ -61,8 +62,7 @@ export function AddHoldingTransactionDialog({
         date,
       }),
     onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ['asset-transactions'] })
-      if (assetId) queryClient.refetchQueries({ queryKey: ['asset-transactions', assetId] })
+      refetchAssetLedgerViews(queryClient, assetId)
       onChanged()
       onClose()
       toast.success(t('assets.txSaved'))

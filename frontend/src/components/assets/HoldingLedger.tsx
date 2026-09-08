@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, Trash2 } from 'lucide-react'
 import type { Asset } from '@/types'
 import { formatCurrency, assetErrorMessage } from './asset-format'
+import { refetchAssetLedgerViews } from '@/lib/asset-queries'
 
 // Inline buy/sell ledger shown when a holding row is expanded (the
 // "Lançamentos" of the reference). Lists the holding's transactions and
@@ -39,8 +40,7 @@ export function HoldingLedger({
   const deleteMutation = useMutation({
     mutationFn: (id: string) => assets.deleteTransaction(id),
     onSuccess: () => {
-      queryClient.refetchQueries({ queryKey: ['asset-transactions', asset.id] })
-      queryClient.refetchQueries({ queryKey: ['asset-transactions'] })
+      refetchAssetLedgerViews(queryClient, asset.id)
       onChanged()
       toast.success(t('assets.txDeleted'))
     },

@@ -47,6 +47,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
+import { refetchAssetLedgerViews } from '@/lib/asset-queries'
 import { AssetIcon } from '@/components/assets/AssetIcon'
 import { getTypeConfig } from '@/components/assets/asset-types'
 import { AssetDetail } from '@/components/assets/AssetDetail'
@@ -1897,8 +1898,10 @@ function AssetTransactionsTab({
   const [formFee, setFormFee] = useState('')
   const [formDate, setFormDate] = useState<string>(new Date().toISOString().slice(0, 10))
 
+  // No asset id here: this tab edits trades across the whole portfolio, so the
+  // per-asset value series are refetched by the drawer that owns them.
   function afterChange() {
-    queryClient.refetchQueries({ queryKey: ['asset-transactions'] })
+    refetchAssetLedgerViews(queryClient)
     onChanged()
   }
 
