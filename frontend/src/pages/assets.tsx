@@ -1600,6 +1600,8 @@ export default function AssetsPage() {
       {/* The holding's detail surface — replaces the old inline row expansion. */}
       <AssetDetailDrawer
         asset={openAsset}
+        portfolioTotalPrimary={portfolioTotalPrimary}
+        userCurrency={userCurrency}
         locale={locale}
         dateLocale={dateLocale}
         canWrite={canWrite}

@@ -4,7 +4,7 @@
 | ---------- | ------ |
 | Task       | T5     |
 | Feature    | 008    |
-| Status     | Todo   |
+| Status     | Done   |
 | Depends on | T2, T4 |
 | PR         |        |
 | Jira       |        |
@@ -63,3 +63,25 @@ should contain no `reduce` over prices other than the T2 call.
 
 `formatRelativeTime` and the amber no-cost badge markup already exist in `assets.tsx` — reuse
 them rather than restating the styling.
+
+## Outcome
+
+`PositionSummary.tsx` (eight figures in a responsive grid, plus the amber no-cost card) and
+`BoughtSoldBar.tsx` (bought / sold / still-held on one scale), both mounted at the top of the
+drawer's ledger body.
+
+Notes:
+
+- **A closed position gets a different layout, not a greyed-out one.** With zero units there is
+  no quantity, no average price and no unrealized return to report, so realized gain becomes the
+  headline figure and the rest of the grid is dropped. Rendering eight dashes would have
+  technically satisfied the criterion while telling the user nothing.
+- **The drawer fetches the ledger under `['asset-transactions', id]`** — the same key
+  `HoldingLedger` and the chart's trade markers already use, so the three read one cached
+  response instead of issuing three requests.
+- **`{{count}}` was avoided in the new plural-ish strings.** `count` is i18next's pluralization
+  trigger: passing it makes i18next look for `_one` / `_few` / `_many` suffixed keys, which
+  these do not have, and Polish and Russian have the most complex rules of the nine locales.
+  The keys interpolate `{{n}}` instead, so there is no plural resolution to get wrong.
+- Nine keys added across nine locale files. `% of portfolio` still comes from the page's
+  `portfolioTotalPrimary`, passed as a prop rather than recomputed.

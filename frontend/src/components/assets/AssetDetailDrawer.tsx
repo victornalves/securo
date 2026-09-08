@@ -1,12 +1,16 @@
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
+import { assets as assetsApi } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import type { Asset } from '@/types'
 import { AssetIcon } from './AssetIcon'
 import { getTypeConfig } from './asset-types'
 import { AssetDetail } from './AssetDetail'
 import { HoldingLedger } from './HoldingLedger'
+import { PositionSummary } from './PositionSummary'
+import { BoughtSoldBar } from './BoughtSoldBar'
 
 /**
  * The single detail surface for one holding.
@@ -32,6 +36,8 @@ import { HoldingLedger } from './HoldingLedger'
  */
 export function AssetDetailDrawer({
   asset,
+  portfolioTotalPrimary,
+  userCurrency,
   locale,
   dateLocale,
   canWrite,
@@ -41,6 +47,9 @@ export function AssetDetailDrawer({
 }: {
   /** `null` closes the drawer. */
   asset: Asset | null
+  /** Page-level total, so "% of portfolio" is not recomputed here. */
+  portfolioTotalPrimary: number
+  userCurrency: string
   locale: string
   dateLocale: string
   canWrite: boolean
@@ -50,6 +59,14 @@ export function AssetDetailDrawer({
 }) {
   const { t } = useTranslation()
   const panelRef = useRef<HTMLDivElement>(null)
+
+  // Same query key as HoldingLedger and the chart's trade markers, so all
+  // three read one cached response rather than issuing three requests.
+  const { data: txs } = useQuery({
+    queryKey: ['asset-transactions', asset?.id],
+    queryFn: () => assetsApi.transactions(asset!.id),
+    enabled: !!asset && asset.valuation_method === 'market_price',
+  })
 
   // Close on Escape
   useEffect(() => {
@@ -174,6 +191,20 @@ export function AssetDetailDrawer({
             <div className="flex-1 overflow-auto">
               {isMarketPriced ? (
                 <>
+                  <PositionSummary
+                    asset={asset}
+                    portfolioTotalPrimary={portfolioTotalPrimary}
+                    userCurrency={userCurrency}
+                    locale={locale}
+                    canWrite={canWriteHere}
+                    onRecordBuy={() => onAddTransaction(asset.id)}
+                  />
+                  <BoughtSoldBar
+                    txs={txs ?? []}
+                    currency={asset.currency}
+                    currentValue={asset.current_value}
+                    locale={locale}
+                  />
                   <AssetDetail
                     assetId={asset.id}
                     currency={asset.currency}
